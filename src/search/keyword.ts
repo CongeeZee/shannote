@@ -6,6 +6,8 @@ export interface SearchOptions {
   folder?: string;
   /** Only notes with this tag (without `#`). */
   tag?: string;
+  /** Leave out notes under these folders. */
+  exclude?: string[];
 }
 
 export interface SearchHit {
@@ -44,16 +46,29 @@ export function toFtsQuery(input: string, mode: "and" | "or" = "and"): string | 
  * matches all terms.
  */
 export function keywordSearch(db: DB, query: string, opts: SearchOptions = {}): SearchHit[] {
+  return keywordSearchWithMode(db, query, opts).hits;
+}
+
+/** Like keywordSearch, but also says whether results matched all terms ("and") or any ("or"). */
+export function keywordSearchWithMode(
+  db: DB,
+  query: string,
+  opts: SearchOptions = {},
+): { hits: SearchHit[]; mode: "and" | "or" } {
   const limit = opts.limit ?? 10;
   for (const mode of ["and", "or"] as const) {
     const fts = toFtsQuery(query, mode);
-    if (!fts) return [];
+    if (!fts) return { hits: [], mode: "and" };
     const where: string[] = ["notes_fts MATCH @fts"];
     const params: Record<string, unknown> = { fts, limit };
     if (opts.folder) {
       where.push("substr(f.path, 1, length(@folder) + 1) = @folder || '/'");
       params.folder = opts.folder.replace(/\/+$/, "");
     }
+    (opts.exclude ?? []).forEach((folder, i) => {
+      where.push(`substr(f.path, 1, length(@ex${i}) + 1) != @ex${i} || '/'`);
+      params[`ex${i}`] = folder.replace(/\/+$/, "");
+    });
     if (opts.tag) {
       where.push("EXISTS (SELECT 1 FROM tags t WHERE t.path = f.path AND t.tag = @tag)");
       params.tag = opts.tag.replace(/^#/, "").toLowerCase();
@@ -71,13 +86,16 @@ export function keywordSearch(db: DB, query: string, opts: SearchOptions = {}): 
       )
       .all(params) as Array<{ path: string; title: string; snippet: string; rank: number }>;
     if (rows.length || mode === "or" || !query.trim().includes(" ")) {
-      return rows.map((r) => ({
-        path: r.path,
-        title: r.title,
-        snippet: r.snippet.replace(/\s+/g, " ").trim(),
-        score: Number((-r.rank).toFixed(3)),
-      }));
+      return {
+        mode,
+        hits: rows.map((r) => ({
+          path: r.path,
+          title: r.title,
+          snippet: r.snippet.replace(/\s+/g, " ").trim(),
+          score: Number((-r.rank).toFixed(3)),
+        })),
+      };
     }
   }
-  return [];
+  return { hits: [], mode: "and" };
 }

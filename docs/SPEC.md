@@ -1,6 +1,6 @@
-# second-brain — Specification
+# Shannote — Specification
 
-> Status: draft v0.2 · 2026-10-26 · Phase 1 complete · Author: Eric (with Claude)
+> Status: draft v0.6 · 2026-10-26 · Phases 1–5 built (4–5 awaiting real use) · Author: Eric (with Claude)
 
 A personal, markdown-based second brain and day-to-day planner designed to be
 operated **through an LLM**. The app owns storage, structure, search and sync.
@@ -27,8 +27,9 @@ Claude owns reasoning. They talk over the Model Context Protocol (MCP).
 
 ### Non-goals (for now)
 
-- Building a full editor/UI. Obsidian (or any editor) is the editor until a real
-  gap appears. A UI is Phase 6 and optional.
+- Building a full editor. Obsidian (or any editor) remains the editor. The local
+  web app (brought forward at Eric's request in Phase 2) is for viewing, planning,
+  capture and task ticking, not long-form editing.
 - Multi-user collaboration.
 - Real-time sync. Sync is git-based and eventually consistent (seconds–minutes).
 
@@ -42,10 +43,10 @@ Claude owns reasoning. They talk over the Model Context Protocol (MCP).
 | Sync | **Git only** (no server) | Free, no infra, Eric's choice |
 | LLM | **None inside the app.** Claude reasons via MCP | Works with a Claude subscription; no API key |
 | Embeddings | **Local**, in-process (`@huggingface/transformers`, e.g. `bge-small-en-v1.5`) | Free, private, no Ollama needed |
-| Index | SQLite (FTS5 + `sqlite-vec`), **per device, not synced**, stored in `~/.cache/second-brain/<vault-hash>/index.db` | Derived data; rebuildable; kept outside the vault so it never reaches git or Obsidian |
+| Index | SQLite (FTS5 + `sqlite-vec`), **per device, not synced**, stored in `~/.cache/shannote/<vault-hash>/index.db` | Derived data; rebuildable; kept outside the vault so it never reaches git or Obsidian |
 | Language | TypeScript on Node 22 | Matches Eric's stack and the official MCP SDK |
 | Calendar | Phase 1: Claude's **Google Calendar connector**. Later: optional built-in read-only sync | Zero OAuth work up front |
-| Code repo | Public, `second-brain` | Portfolio. Vault stays private |
+| Code repo | Public, `shannote` | Portfolio. Vault stays private |
 
 ### 2.1 Using a Claude subscription — what works and what doesn't
 
@@ -88,7 +89,7 @@ tool that returns candidates for Claude to decide on.
 
 - **vault** — reads/writes markdown, parses frontmatter (`gray-matter`), wikilinks,
   tags, headings and tasks (`remark`/`mdast`). Pure functions, heavily tested.
-- **indexer** — watches the vault (`chokidar`), keeps the index (`~/.cache/second-brain/<vault-hash>/index.db`, outside the vault)
+- **indexer** — watches the vault (`chokidar`), keeps the index (`~/.cache/shannote/<vault-hash>/index.db`, outside the vault)
   current: notes, headings, links, tags, tasks, FTS5 table, embedding vectors
   per chunk (chunked by heading, ~300–500 tokens). Full rebuild via
   `brain index --rebuild`.
@@ -166,7 +167,7 @@ Claudes** on each device must know what the others did.
 ### 5.1 Device identity
 
 `brain init` asks for a device name (`laptop-home`, `laptop-uni`, `phone`) and
-stores it in `~/.config/second-brain/device.json` (not in the vault).
+stores it in `~/.config/shannote/device.json` (not in the vault).
 Every commit, session log and `updated_by` field carries it.
 
 ### 5.2 Session handoff protocol
@@ -310,7 +311,7 @@ depends on it. All tools take/return JSON. Paths are vault-relative.
 
 ### 6.4 Server instructions (sent to every client)
 
-> You are connected to Eric's second brain. At the start of any conversation
+> You are connected to Shannote, Eric's second brain. At the start of any conversation
 > that involves his notes, plans, tasks or projects, call `brain_begin_session`
 > first. Before ending, or when Eric says "wrap up"/"hand off", call
 > `brain_end_session` with a summary, decisions, next steps and open questions.
@@ -343,10 +344,12 @@ MCP endpoint, which requires a server. That's Phase 7, if wanted.
   Calendar connector (already connected on Eric's account) alongside the brain
   tools. Event → meeting note linking is done by Claude writing
   `event_id` / `event_start` into meeting-note frontmatter.
-- **Later (optional)**: `brain calendar sync` pulls a read-only window (−7 to +14
+- **Built in Phase 4**: read-only calendars from private iCal URLs (`brain calendar add`),
+  see §15. The original plan below is kept for reference.
+- **Originally planned**: `brain calendar sync` pulls a read-only window (−7 to +14
   days) via Google Calendar API or a private ICS URL into the per-device cache directory, so
   `begin_session` and scheduled `claude -p` runs see events without relying on
-  connector availability. OAuth tokens live in `~/.config/second-brain/`, never in the vault.
+  connector availability. OAuth tokens live in `~/.config/shannote/`, never in the vault.
 
 ---
 
@@ -358,11 +361,11 @@ Each phase ends with something Eric uses daily for about a week before moving on
 |---|---|---|
 | **0** | Repo, spec, tooling (lint, test, build, CI) | `npm test` green in CI |
 | **1** ✅ | `vault` lib + `indexer` (FTS only) + CLI `init/index/status/search/doctor`. Templates. | Can index a real vault of 500+ notes in < 5s; parser tests pass. *Met: 1,000 notes in < 1s; 148-note real vault in ~0.35s.* |
-| **2** | MCP server: read/search/create/edit/tasks/daily/capture + git sync + **session handoff + threads** | Two laptops: a session on one is visible in `begin_session` on the other |
-| **3** | Local embeddings + hybrid search + `brain_related` | Semantic queries find notes with no keyword overlap |
-| **4** | Planning prompts (`morning_brief`, `evening_review`, `weekly_review`, `meeting_prep`) + optional scheduled `claude -p` runner | Eric's daily note is produced from the morning brief for a week |
-| **5** | Second-brain prompts (`triage_inbox`, `link_suggestions`, `context_pack`), phone capture setup guide | Inbox reaches zero via triage |
-| **6** | (Optional) UI: local web app — today view, tasks, inbox, search | Only if a concrete gap in Obsidian is identified |
+| **2** ✅ | MCP server: read/search/create/edit/tasks/daily/capture + git sync + **session handoff + threads**. Plus local web app (`brain web`). | Two laptops: a session on one is visible in `begin_session` on the other. *Met: covered by `test/sync.test.ts` with two clones of a bare remote.* |
+| **3** ✅ | Local embeddings + hybrid search + `brain_related` | Semantic queries find notes with no keyword overlap. *Met: real-model test in `test/semantic.test.ts`; on Eric's 148-note vault, "keeping data consistent after a crash" finds the journalling notes.* |
+| **4** 🟡 | Planning prompts (`morning_brief`, `evening_review`, `weekly_review`, `meeting_prep`) + optional scheduled `claude -p` runner | Eric's daily note is produced from the morning brief for a week. *Built and tested; the week of real use hasn't happened yet.* |
+| **5** 🟡 | Second-brain prompts (`triage_inbox`, `link_suggestions`, `context_pack`), phone capture setup guide | Inbox reaches zero via triage. *Built (incl. web Inbox page and `brain web --lan` for phones); needs real use.* |
+| **6** | Web app, round 2: in-place editing of daily notes, graph view, calendar strip (once Phase 4 calendar data exists), installable PWA | Eric uses the web app daily instead of Obsidian for planning |
 | **7** | (Optional) Hosted hub: remote MCP endpoint (auth), server-side scheduled jobs, phone Claude access | Only if git-only limits bite |
 
 ---
@@ -394,8 +397,8 @@ Each phase ends with something Eric uses daily for about a week before moving on
    usage. Tools return snippets, not whole notes, by default.
 5. **Public code repo**: no personal data, tokens or vault contents in this repo.
    Fixtures are synthetic.
-6. **Open**: how does Claude Code headless (`claude -p`) pick up the Google Calendar
-   connector for scheduled briefs? Verify in Phase 4. Fallback: built-in calendar sync (§8).
+6. **Resolved**: headless `claude -p` runs can't use claude.ai connectors, so scheduled
+   briefs read the calendar from private iCal URLs instead (§15).
 7. **Open**: Obsidian vs this app's conventions drift. Keep conventions compatible
    with Obsidian core + Tasks plugin.
 
@@ -407,7 +410,7 @@ Each phase ends with something Eric uses daily for about a week before moving on
   (`$XDG_CACHE_HOME` or `~/.cache`, override with `BRAIN_CACHE_DIR`), keyed by a hash of
   the vault path. Reason: pointing `brain` at an existing Obsidian vault must not add
   files to it.
-- **Machine config** lives in `~/.config/second-brain/config.json` (`vault`, `device`).
+- **Machine config** lives in `~/.config/shannote/config.json` (`vault`, `device`).
   Override with `BRAIN_CONFIG_DIR`, `BRAIN_VAULT`, `BRAIN_DEVICE`.
 - **Parsing rules.** Code fences, inline code, `$$` math and `%%` comments are skipped for
   links, tags, headings and tasks. Wikilinks inside frontmatter values (e.g. `related:`)
@@ -422,7 +425,130 @@ Each phase ends with something Eric uses daily for about a week before moving on
 - **Ignored folders:** hidden folders (`.git`, `.obsidian`, `.trash`, …),
   `_brain/trash`, `_brain/templates`.
 
-## 13. Client setup (target)
+## 13. Implementation notes (Phase 2)
+
+- **One core, two front ends.** `src/core.ts` (`Brain`) owns vault, index, git and
+  session state. The MCP server (`src/mcp/server.ts`) and the web app (`src/web/`) are thin
+  layers over it, so write rules are identical.
+- **Writes**: each write is validated (no paths outside the vault, no hidden folders, no
+  writes into `_brain/` except threads/sessions), applied, stamped (`updated`,
+  `updated_by: claude@<device>` or `eric@<device>`, only on notes that already have
+  frontmatter), committed as `brain(<device>): <op> <path>`, then re-indexed. Pushes are
+  debounced 10 s; `end_session` pushes immediately.
+- **Sync**: pulls are `fetch` + `merge --no-edit` (never rebase), at most once a minute
+  and on every `begin_session`. Outside edits are committed as `edit(<device>): …` before a
+  merge. Conflicts keep the local file and write the other side to
+  `<name>.conflict-<timestamp>.md`; the briefing lists these. `GIT_TERMINAL_PROMPT=0` and
+  timeouts mean a missing credential shows as "offline" instead of hanging.
+- **Sync only in initialised vaults**: git operations run only when `_brain/config.yml`
+  exists (created by `brain init`). Pointing `brain web`/`serve` at an existing folder never
+  commits, pulls or pushes there.
+- **Sessions**: `brain_begin_session` returns the briefing in §5.2; the server also tracks
+  touched files and, if the process exits without `brain_end_session`, writes a
+  `handoff: false` log listing them. The web app doesn't create sessions.
+- **Tasks**: `brain_task_update` finds the task by id, verifies the indexed line still
+  matches, and falls back to an exact-line search if the file shifted. Session-log
+  "next steps" are checkbox lines but are excluded from task queries and counts.
+- **Index concurrency**: index runs are serialised per process, rows are re-checked
+  inside the write transaction, and SQLite waits up to 5 s on locks, so the MCP server and
+  web app can share one index.
+- **Web app security**: binds to 127.0.0.1, rejects non-localhost `Host` headers (DNS
+  rebinding), requires an `x-brain: 1` header on POSTs (blocks cross-site form posts), and
+  escapes raw HTML in notes. CSP disallows external resources.
+- **Not yet**: MCP prompts (`morning_brief` etc.) are Phase 4. Recurring tasks are
+  completed like normal tasks (no next occurrence is created yet).
+
+## 14. Implementation notes (Phase 3)
+
+- **Model**: `Xenova/all-MiniLM-L6-v2` (384-d, ~23 MB quantised) via transformers.js on
+  CPU, downloaded once to `~/.cache/shannote/models`. Chosen over bge-small because
+  it's the model the real-model test was run against. Override with `BRAIN_EMBED_MODEL`
+  or `embeddingModel` in config; `BRAIN_EMBEDDINGS=off` disables; `BRAIN_MODEL_PATH`
+  loads from a local folder with no downloads.
+- **Optional dependency**: `@huggingface/transformers` is an `optionalDependency` and is
+  kept out of the bundle. If it's missing or the model can't load, everything falls back
+  to keyword search and the reason is shown in search results and on the Health page.
+- **Chunking**: sections at H1–H3, tiny sections merged into the previous one, long ones
+  split at paragraphs (≤ 1,400 chars). Each chunk is prefixed with `Title › Heading path`.
+  Link syntax, callout markers and task dates are stripped; code blocks are cut to 4 lines.
+- **Vector storage**: float32 BLOBs in SQLite keyed by `(chunk hash, model)`, so an edit
+  re-embeds only the changed section and vectors survive index rebuilds. Search is a
+  brute-force cosine scan in memory instead of `sqlite-vec`: a few ms for thousands of
+  chunks, and no native extension to install.
+- **Hybrid ranking**: reciprocal rank fusion (k = 60) of BM25 note ranks and best-chunk
+  semantic ranks. Keyword hits from the OR fallback count half. Semantic matches under
+  cosine 0.25 are dropped. Results say whether they matched words, meaning or both, and
+  which section matched.
+- **Similar notes**: `brain_related` compares the note's centroid vector with all
+  chunks, excluding notes already linked either way (cut-off 0.35).
+- **Background embedding**: the MCP server and web app embed new or changed sections
+  after each index run, single-flight; failures back off for 10 minutes. `brain embed`
+  runs it in the foreground with progress. First full run on Eric's vault: 1,889
+  sections, ~85 s with the fp32 model in the cloud sandbox; the default q8 model is
+  faster.
+
+## 15. Implementation notes (Phase 4)
+
+- **Rituals = instructions + facts.** `brain_plan(kind)` and the MCP prompts
+  `morning_brief`, `evening_review`, `weekly_review`, `meeting_prep` return the same
+  text: step-by-step instructions (`src/plan/planning.ts`) plus a JSON context bundle
+  gathered by `Brain.planContext()` (calendar, overdue/due/upcoming tasks, threads, recent
+  handoffs, yesterday's review, completed tasks, git changes…). The app still never calls
+  an LLM. A tool version exists because some clients don't surface MCP prompts.
+- **Where results go**: the morning brief writes the daily note's `## Schedule`
+  (`- HH:MM–HH:MM Title` lines) and `## Plan` (Top 3 + Blocks; existing tasks are
+  referenced, not copied). The evening review writes `## Review` and rolls tasks over. The
+  weekly review creates `daily/YYYY-Www-review.md`. Meeting prep creates
+  `meetings/YYYY-MM-DD <title>.md` from the meeting template.
+- **Calendar**: private iCal URLs (Google Calendar: Settings → your calendar → "Secret
+  address in iCal format") stored per device in machine config; never in the vault.
+  15-minute cache with stale fallback. Supports TZID/UTC/floating/all-day times, DURATION,
+  RRULE (DAILY/WEEKLY/MONTHLY/YEARLY, INTERVAL, COUNT, UNTIL, BYDAY incl. `1TU`,
+  BYMONTHDAY), EXDATE, RECURRENCE-ID overrides and cancelled events, and keeps wall-clock
+  time across DST. Not supported: BYSETPOS, BYWEEKNO, RDATE, Windows time-zone names
+  (treated as local time).
+- **Today page** merges calendar events with the daily note's Schedule lines (deduped by
+  time + title), dims past events and highlights the next one.
+- **Rollover** (`brain_rollover_tasks`): open tasks in one day's daily note are marked
+  `[>]` and appended to the next day's Plan with `(from [[date]])`. Only daily-note tasks
+  move; tasks that live in project notes stay where they are.
+- **Recurring tasks**: completing a `🔁` task inserts the next occurrence above it, with
+  due/scheduled/start dates shifted (Obsidian Tasks behaviour). Rules: every
+  day/week/month/year, every N …, every weekday, every <weekday list>, "when done".
+- **Scheduled runs**: `brain schedule` prints the `claude mcp add` command and crontab
+  lines for `claude -p` runs at the morning/evening times. Printing rather than installing
+  is deliberate: cron jobs that spend usage should be added knowingly.
+
+## 16. Implementation notes (Phase 5)
+
+- **Inbox entries** are top-level list items (with indented continuation lines) or
+  paragraphs in any `inbox/*.md` file, so phone captures typed in Obsidian work too.
+  Ids hash file + text. `brain_inbox` lists them with three suggested destinations from
+  hybrid search (excluding inbox/, daily/, _brain/).
+- **Resolving** an entry (move / task / archive / discard) appends it to the destination,
+  removes it from the inbox file (deleting the file once empty), logs it to
+  `_brain/inbox-log/YYYY-MM.md` (not indexed), and commits everything in one commit.
+  Claude's triage prompt must show a plan and wait for approval before resolving.
+- **Link suggestions**: plain-text, whole-word, case-insensitive mentions of other notes'
+  titles, outside code, links, URLs, headings and frontmatter. Titles need a space or ≥ 8
+  characters (dates and words like "Ideas" are skipped) to keep noise down. Plus semantic
+  "similar, not linked" from Phase 3. `brain_links add` turns a mention into
+  `[[Title|original wording]]`, or adds to `related:` frontmatter if the note has one
+  (Eric's existing convention), else a `## Related` section.
+- **Context packs**: top hybrid-search notes for a topic, each with its summary
+  (frontmatter `summary` or first paragraph), the best-matching section and open tasks,
+  plus recent handoff decisions; clipped at paragraph/sentence boundaries to a budget
+  (default 8,000 chars). Available as a tool, a prompt, and a "Copy context pack" button.
+- **Phone**: `brain web --lan` binds to all interfaces and requires a random token for
+  non-local requests (`?token=` once, then an HttpOnly SameSite=Strict cookie; constant-time
+  comparison; `--new-token` rotates it). Localhost behaviour is unchanged. The app is
+  installable (web manifest). Guide: `docs/PHONE.md` (LAN/Tailscale, Obsidian + git on
+  Android/iOS, limits of Claude mobile).
+- **Tool count** is now 22. That's past the "keep it small" aim in §6; related actions
+  were folded into `brain_inbox` and `brain_links` (an `action` argument) to limit
+  growth. Watch for Claude picking the wrong tool; consolidate further if it does.
+
+## 17. Client setup
 
 ```jsonc
 // Claude Desktop: claude_desktop_config.json
@@ -430,7 +556,7 @@ Each phase ends with something Eric uses daily for about a week before moving on
   "mcpServers": {
     "brain": {
       "command": "npx",
-      "args": ["-y", "second-brain", "serve"],
+      "args": ["-y", "shannote", "serve"],
       "env": { "BRAIN_VAULT": "/Users/you/vault" }
     }
   }
@@ -439,5 +565,5 @@ Each phase ends with something Eric uses daily for about a week before moving on
 
 ```bash
 # Claude Code
-claude mcp add brain --scope user -- npx -y second-brain serve
+claude mcp add brain --scope user -- npx -y shannote serve
 ```

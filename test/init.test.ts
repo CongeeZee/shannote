@@ -1,10 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { openDb } from "../src/index/db.js";
 import { indexVault } from "../src/index/indexer.js";
 import { initVault } from "../src/vault/init.js";
+import { assertNotCodeRepo } from "../src/config.js";
 import { renderTemplate, TEMPLATES } from "../src/vault/templates.js";
 import { parseNote } from "../src/vault/parse.js";
 
@@ -46,4 +47,30 @@ it("renders templates into valid notes", () => {
   expect(n.frontmatterError).toBeUndefined();
   expect(n.frontmatter.type).toBe("daily");
   expect(n.headings.map((h) => h.text)).toContain("Plan");
+});
+
+it("refuses to treat a code project as a vault", () => {
+  writeFileSync(join(dir, "package.json"), "{}");
+  expect(() => assertNotCodeRepo(dir)).toThrow(/looks like a code project/);
+});
+
+it("moves config and cache folders from the old second-brain name", async () => {
+  const { configDir, cacheRoot } = await import("../src/config.js");
+  const saved = { c: process.env.XDG_CONFIG_HOME, k: process.env.XDG_CACHE_HOME, bc: process.env.BRAIN_CONFIG_DIR, bk: process.env.BRAIN_CACHE_DIR };
+  delete process.env.BRAIN_CONFIG_DIR;
+  delete process.env.BRAIN_CACHE_DIR;
+  process.env.XDG_CONFIG_HOME = join(dir, "config");
+  process.env.XDG_CACHE_HOME = join(dir, "cache");
+  mkdirSync(join(dir, "config/second-brain"), { recursive: true });
+  writeFileSync(join(dir, "config/second-brain/config.json"), '{"vault":"/x"}');
+  mkdirSync(join(dir, "cache/second-brain"), { recursive: true });
+  try {
+    expect(configDir()).toBe(join(dir, "config/shannote"));
+    expect(readFileSync(join(dir, "config/shannote/config.json"), "utf8")).toContain("/x");
+    expect(existsSync(join(dir, "config/second-brain"))).toBe(false);
+    expect(cacheRoot()).toBe(join(dir, "cache/shannote"));
+  } finally {
+    for (const [k, v] of [["XDG_CONFIG_HOME", saved.c], ["XDG_CACHE_HOME", saved.k], ["BRAIN_CONFIG_DIR", saved.bc], ["BRAIN_CACHE_DIR", saved.bk]] as const)
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
 });

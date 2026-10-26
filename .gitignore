@@ -5,3 +5,13 @@ dist/
 .env
 .DS_Store
 coverage/
+
+# This is the code repo. Never commit a vault here (it's public).
+/_brain/
+/daily/
+/inbox/
+/meetings/
+/notes/
+/people/
+/projects/
+/Claude outputs/

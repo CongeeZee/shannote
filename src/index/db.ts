@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 export type DB = Database.Database;
 
 /** Bump when the schema changes; a mismatch triggers a full rebuild. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -72,6 +72,26 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS tasks_path ON tasks(path);
 CREATE INDEX IF NOT EXISTS tasks_status_due ON tasks(status, due);
 
+-- Sections of notes for semantic search. hash = sha1(text) keys the vector cache.
+CREATE TABLE IF NOT EXISTS chunks (
+  path    TEXT NOT NULL REFERENCES notes(path) ON DELETE CASCADE,
+  ord     INTEGER NOT NULL,
+  heading TEXT NOT NULL,
+  text    TEXT NOT NULL,
+  hash    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS chunks_path ON chunks(path);
+CREATE INDEX IF NOT EXISTS chunks_hash ON chunks(hash);
+
+-- Vector cache, keyed by chunk content and model. Survives index rebuilds.
+CREATE TABLE IF NOT EXISTS embeddings (
+  hash   TEXT NOT NULL,
+  model  TEXT NOT NULL,
+  dims   INTEGER NOT NULL,
+  vector BLOB NOT NULL,          -- float32, little-endian, unit length
+  PRIMARY KEY (hash, model)
+);
+
 -- Full-text search. path is stored but not indexed; rowid ties rows to notes.
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
   path UNINDEXED,
@@ -89,6 +109,8 @@ export function openDb(file: string): DB {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.pragma("synchronous = NORMAL");
+  // The MCP server and web app may share one index file; wait instead of failing on locks.
+  db.pragma("busy_timeout = 5000");
 
   const hasMeta = db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='meta'")
@@ -105,10 +127,11 @@ export function openDb(file: string): DB {
   return db;
 }
 
-/** Drops all tables so the next index run rebuilds from scratch. */
+/** Drops all tables (except the vector cache) so the next index run rebuilds from scratch. */
 export function resetDb(db: DB): void {
   db.exec(`
     DROP TABLE IF EXISTS notes_fts;
+    DROP TABLE IF EXISTS chunks;
     DROP TABLE IF EXISTS tasks;
     DROP TABLE IF EXISTS tags;
     DROP TABLE IF EXISTS links;

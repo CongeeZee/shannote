@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -9,17 +9,27 @@ export interface MachineConfig {
   device?: string;
 }
 
+/** Moves a pre-rename (second-brain) folder to the new name, once. */
+function migrated(base: string): string {
+  const next = join(base, "shannote");
+  const old = join(base, "second-brain");
+  if (!existsSync(next) && existsSync(old)) {
+    try {
+      renameSync(old, next);
+    } catch {
+      return old; // couldn't move it (permissions, another process): keep using it
+    }
+  }
+  return next;
+}
+
 export function configDir(): string {
-  return (
-    process.env.BRAIN_CONFIG_DIR ??
-    join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "second-brain")
-  );
+  return process.env.BRAIN_CONFIG_DIR ?? migrated(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"));
 }
 
 export function cacheRoot(): string {
   return (
-    process.env.BRAIN_CACHE_DIR ??
-    join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "second-brain")
+    process.env.BRAIN_CACHE_DIR ?? migrated(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"))
   );
 }
 
@@ -49,8 +59,33 @@ export function resolveVault(flag?: string): string {
     );
   }
   const abs = resolve(v.replace(/^~(?=$|\/)/, homedir()));
-  if (!existsSync(abs)) throw new Error(`Vault not found: ${abs}`);
+  const fromConfig = !flag && !process.env.BRAIN_VAULT;
+  const where = fromConfig ? ` (saved in ${join(configDir(), "config.json")})` : "";
+  if (!existsSync(abs)) throw new Error(`Vault not found: ${abs}${where}. Run \`brain init ~/vault\` to create one.`);
+  try {
+    assertNotCodeRepo(abs);
+  } catch (e) {
+    if (!fromConfig) throw e;
+    throw new Error(
+      `Your saved vault is ${abs}, which is this app's code folder, not a vault (probably from running \`brain init\` there). ` +
+        "Run `brain init ~/vault` to create a real vault; that also replaces the saved setting.",
+    );
+  }
   return abs;
+}
+
+/**
+ * Refuses to treat a code project (anything with a package.json, including this
+ * app's own repo) as a vault. The app commits and pushes vault changes, so a
+ * vault inside a public code repo would publish personal notes.
+ */
+export function assertNotCodeRepo(dir: string): void {
+  if (existsSync(join(dir, "package.json"))) {
+    throw new Error(
+      `${dir} looks like a code project (it has a package.json), not a vault. ` +
+        "Your notes must live in their own folder and private repo, e.g. `brain init ~/vault`.",
+    );
+  }
 }
 
 export function deviceName(): string {

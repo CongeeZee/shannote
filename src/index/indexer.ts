@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { chunkNote } from "../search/chunk.js";
 import { parseNote } from "../vault/parse.js";
 import { LinkResolver } from "../vault/resolve.js";
 import type { ParsedNote } from "../vault/types.js";
@@ -71,6 +72,7 @@ export async function indexVault(
   let added = 0;
   let updated = 0;
 
+  const getExisting = db.prepare("SELECT path, mtime_ms, size, hash FROM notes WHERE path = ?");
   const deleteNote = db.prepare("DELETE FROM notes WHERE path = ?");
   const deleteFts = db.prepare("DELETE FROM notes_fts WHERE path = ?");
   const touch = db.prepare("UPDATE notes SET mtime_ms = ?, size = ? WHERE path = ?");
@@ -91,6 +93,7 @@ export async function indexVault(
                        done_date, recurrence, tags)
     VALUES (@id, @path, @line, @text, @raw, @status, @status_char, @due, @scheduled, @start,
             @done_date, @recurrence, @tags)`);
+  const insertChunk = db.prepare("INSERT INTO chunks (path, ord, heading, text, hash) VALUES (?, ?, ?, ?, ?)");
   const insertFts = db.prepare(
     "INSERT INTO notes_fts (path, title, headings, tags, body) VALUES (?, ?, ?, ?, ?)",
   );
@@ -140,6 +143,7 @@ export async function indexVault(
         recurrence: t.recurrence ?? null,
         tags: JSON.stringify(t.tags),
       });
+    for (const c of chunkNote(note)) insertChunk.run(note.path, c.ord, c.heading, c.text, c.hash);
     insertFts.run(
       note.path,
       note.title,
@@ -155,7 +159,9 @@ export async function indexVault(
       deleteFts.run(p);
     }
     for (const { file, content, hash } of loaded) {
-      const prev = existing.get(file.path);
+      // Re-read inside the transaction: another indexer (a second call in this
+      // process, or another process sharing the index) may have written it since.
+      const prev = getExisting.get(file.path) as Existing | undefined;
       if (prev && prev.hash === hash) {
         touch.run(file.mtimeMs, file.size, file.path);
         continue;

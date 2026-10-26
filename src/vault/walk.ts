@@ -11,6 +11,7 @@ export const DEFAULT_IGNORES = [
   "node_modules",
   "_brain/trash",
   "_brain/templates",
+  "_brain/inbox-log",
 ];
 
 export interface VaultFile {

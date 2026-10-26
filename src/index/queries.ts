@@ -1,5 +1,8 @@
 import { LinkResolver } from "../vault/resolve.js";
+import { localDate } from "../util.js";
 import { getMeta, type DB } from "./db.js";
+
+export { localDate };
 
 export interface VaultStatus {
   notes: number;
@@ -11,15 +14,10 @@ export interface VaultStatus {
   lastIndexed?: string;
 }
 
-export function localDate(d = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 export function vaultStatus(db: DB, today = localDate()): VaultStatus {
   const one = <T>(sql: string, ...p: unknown[]) => db.prepare(sql).get(...p) as T;
+  // Next steps inside session logs are handoff notes, not tasks.
+  const T = "path NOT LIKE '\\_brain/sessions/%' ESCAPE '\\'";
   const notes = one<{ n: number; w: number | null }>(
     "SELECT COUNT(*) n, SUM(word_count) w FROM notes",
   );
@@ -31,15 +29,15 @@ export function vaultStatus(db: DB, today = localDate()): VaultStatus {
       .n,
     tags: one<{ n: number }>("SELECT COUNT(DISTINCT tag) n FROM tags").n,
     tasks: {
-      open: one<{ n: number }>("SELECT COUNT(*) n FROM tasks WHERE status IN ('todo','in_progress')")
+      open: one<{ n: number }>(`SELECT COUNT(*) n FROM tasks WHERE status IN ('todo','in_progress') AND ${T}`)
         .n,
-      done: one<{ n: number }>("SELECT COUNT(*) n FROM tasks WHERE status = 'done'").n,
+      done: one<{ n: number }>(`SELECT COUNT(*) n FROM tasks WHERE status = 'done' AND ${T}`).n,
       overdue: one<{ n: number }>(
-        "SELECT COUNT(*) n FROM tasks WHERE status IN ('todo','in_progress') AND due < ?",
+        `SELECT COUNT(*) n FROM tasks WHERE status IN ('todo','in_progress') AND due < ? AND ${T}`,
         today,
       ).n,
       dueToday: one<{ n: number }>(
-        "SELECT COUNT(*) n FROM tasks WHERE status IN ('todo','in_progress') AND due = ?",
+        `SELECT COUNT(*) n FROM tasks WHERE status IN ('todo','in_progress') AND due = ? AND ${T}`,
         today,
       ).n,
     },

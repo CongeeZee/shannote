@@ -75,6 +75,15 @@ describe("indexVault", () => {
     ]);
   });
 
+  it("survives concurrent index runs on the same database", async () => {
+    await indexVault(db, dir);
+    writeFileSync(join(dir, "notes/Concurrent.md"), "# Concurrent\n");
+    const results = await Promise.all([1, 2, 3, 4].map(() => indexVault(db, dir)));
+    expect(results.every((r) => r.total === 8)).toBe(true);
+    const n = db.prepare("SELECT COUNT(*) n FROM notes").get() as { n: number };
+    expect(n.n).toBe(8);
+  });
+
   it("rebuild starts from scratch", async () => {
     await indexVault(db, dir);
     expect(await indexVault(db, dir, { rebuild: true })).toMatchObject({ added: 7 });

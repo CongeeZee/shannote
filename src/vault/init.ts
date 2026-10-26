@@ -54,7 +54,7 @@ export function initVault(root: string, opts: { timezone?: string } = {}): InitR
   const files: Record<string, string> = {
     ".gitattributes": GITATTRIBUTES,
     ".gitignore": GITIGNORE,
-    "_brain/config.yml": `# second-brain vault settings (synced across devices)
+    "_brain/config.yml": `# Shannote vault settings (synced across devices)
 timezone: ${timezone}
 daily_folder: daily
 inbox_folder: inbox
