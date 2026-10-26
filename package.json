@@ -1,0 +1,26 @@
+{
+  "name": "second-brain",
+  "version": "0.0.0",
+  "description": "A markdown second brain and daily planner operated through Claude via MCP",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "brain": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup src/cli.ts --format esm --dts --clean",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
