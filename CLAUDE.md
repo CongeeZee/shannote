@@ -21,19 +21,25 @@ separate private vault repo and must never be committed here (this repo is publi
 - Keep MCP tool count small and descriptions precise. Changing a tool
   name or description is a behaviour change. Note it in the PR.
 
-## Layout (target)
+## Layout
 ```
 src/
-  vault/     parse + write markdown, frontmatter, links, tasks
-  index/     SQLite FTS5 + sqlite-vec, watcher
-  search/    hybrid ranking
-  sync/      git provider, conflict handling, device identity
-  session/   begin/end session, threads
-  mcp/       server, tools, prompts, resources
-  cli.ts     brain init|serve|index|sync|doctor|status
+  config.ts  machine config, vault/device resolution, index path   (Phase 1 ✅)
+  vault/     parse markdown, resolve links, walk vault, init, templates (Phase 1 ✅)
+  index/     SQLite schema, incremental indexer, status/doctor queries (Phase 1 ✅)
+  search/    keyword (FTS5/BM25) ✅; hybrid ranking (Phase 3)
+  sync/      git provider, conflict handling           (Phase 2)
+  session/   begin/end session, threads                (Phase 2)
+  mcp/       server, tools, prompts, resources         (Phase 2)
+  cli.ts     brain init|index|status|search|doctor ✅; serve|sync (Phase 2)
 test/
-  fixtures/vault/
+  fixtures/vault/   synthetic notes covering edge cases (code fences, callouts,
+                    broken YAML, duplicate names, frontmatter links)
 ```
+
+## Testing against a real vault
+Use `--vault <path>` (or `BRAIN_VAULT`) with `BRAIN_CACHE_DIR`/`BRAIN_CONFIG_DIR`
+pointed at a scratch folder. The index never writes inside the vault.
 
 ## Commands
 - `npm run build` · `npm test` · `npm run typecheck` · `npm run dev -- <command>`

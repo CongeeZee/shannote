@@ -1,6 +1,6 @@
 # second-brain — Specification
 
-> Status: draft v0.1 · 2026-10-26 · Author: Eric (with Claude)
+> Status: draft v0.2 · 2026-10-26 · Phase 1 complete · Author: Eric (with Claude)
 
 A personal, markdown-based second brain and day-to-day planner designed to be
 operated **through an LLM**. The app owns storage, structure, search and sync.
@@ -42,7 +42,7 @@ Claude owns reasoning. They talk over the Model Context Protocol (MCP).
 | Sync | **Git only** (no server) | Free, no infra, Eric's choice |
 | LLM | **None inside the app.** Claude reasons via MCP | Works with a Claude subscription; no API key |
 | Embeddings | **Local**, in-process (`@huggingface/transformers`, e.g. `bge-small-en-v1.5`) | Free, private, no Ollama needed |
-| Index | SQLite (FTS5 + `sqlite-vec`), **per device, not synced** | Derived data; rebuildable; avoids binary merge conflicts |
+| Index | SQLite (FTS5 + `sqlite-vec`), **per device, not synced**, stored in `~/.cache/second-brain/<vault-hash>/index.db` | Derived data; rebuildable; kept outside the vault so it never reaches git or Obsidian |
 | Language | TypeScript on Node 22 | Matches Eric's stack and the official MCP SDK |
 | Calendar | Phase 1: Claude's **Google Calendar connector**. Later: optional built-in read-only sync | Zero OAuth work up front |
 | Code repo | Public, `second-brain` | Portfolio. Vault stays private |
@@ -88,7 +88,7 @@ tool that returns candidates for Claude to decide on.
 
 - **vault** — reads/writes markdown, parses frontmatter (`gray-matter`), wikilinks,
   tags, headings and tasks (`remark`/`mdast`). Pure functions, heavily tested.
-- **indexer** — watches the vault (`chokidar`), keeps `.brain-cache/index.db`
+- **indexer** — watches the vault (`chokidar`), keeps the index (`~/.cache/second-brain/<vault-hash>/index.db`, outside the vault)
   current: notes, headings, links, tags, tasks, FTS5 table, embedding vectors
   per chunk (chunked by heading, ~300–500 tokens). Full rebuild via
   `brain index --rebuild`.
@@ -97,7 +97,7 @@ tool that returns candidates for Claude to decide on.
 - **sync** — wraps git. Pull before reads (debounced), commit after every write,
   push in the background (debounced). Conflict handling in §5.4.
 - **mcp** — `@modelcontextprotocol/sdk` server over stdio. Tools in §6, prompts in §6.3.
-- **cli** — `brain init | serve | index | sync | doctor | status`.
+- **cli** — `brain init | serve | index | search | sync | doctor | status`.
 
 ### 3.2 Tech stack
 
@@ -344,7 +344,7 @@ MCP endpoint, which requires a server. That's Phase 7, if wanted.
   tools. Event → meeting note linking is done by Claude writing
   `event_id` / `event_start` into meeting-note frontmatter.
 - **Later (optional)**: `brain calendar sync` pulls a read-only window (−7 to +14
-  days) via Google Calendar API or a private ICS URL into `.brain-cache`, so
+  days) via Google Calendar API or a private ICS URL into the per-device cache directory, so
   `begin_session` and scheduled `claude -p` runs see events without relying on
   connector availability. OAuth tokens live in `~/.config/second-brain/`, never in the vault.
 
@@ -357,7 +357,7 @@ Each phase ends with something Eric uses daily for about a week before moving on
 | Phase | Deliverable | Done when |
 |---|---|---|
 | **0** | Repo, spec, tooling (lint, test, build, CI) | `npm test` green in CI |
-| **1** | `vault` lib + `indexer` (FTS only) + CLI `init/index/status`. Templates. | Can index a real vault of 500+ notes in < 5s; parser tests pass |
+| **1** ✅ | `vault` lib + `indexer` (FTS only) + CLI `init/index/status/search/doctor`. Templates. | Can index a real vault of 500+ notes in < 5s; parser tests pass. *Met: 1,000 notes in < 1s; 148-note real vault in ~0.35s.* |
 | **2** | MCP server: read/search/create/edit/tasks/daily/capture + git sync + **session handoff + threads** | Two laptops: a session on one is visible in `begin_session` on the other |
 | **3** | Local embeddings + hybrid search + `brain_related` | Semantic queries find notes with no keyword overlap |
 | **4** | Planning prompts (`morning_brief`, `evening_review`, `weekly_review`, `meeting_prep`) + optional scheduled `claude -p` runner | Eric's daily note is produced from the morning brief for a week |
@@ -401,7 +401,28 @@ Each phase ends with something Eric uses daily for about a week before moving on
 
 ---
 
-## 12. Client setup (target)
+## 12. Implementation notes (Phase 1)
+
+- **Index location.** Moved from `<vault>/.brain-cache/` to the user cache directory
+  (`$XDG_CACHE_HOME` or `~/.cache`, override with `BRAIN_CACHE_DIR`), keyed by a hash of
+  the vault path. Reason: pointing `brain` at an existing Obsidian vault must not add
+  files to it.
+- **Machine config** lives in `~/.config/second-brain/config.json` (`vault`, `device`).
+  Override with `BRAIN_CONFIG_DIR`, `BRAIN_VAULT`, `BRAIN_DEVICE`.
+- **Parsing rules.** Code fences, inline code, `$$` math and `%%` comments are skipped for
+  links, tags, headings and tasks. Wikilinks inside frontmatter values (e.g. `related:`)
+  are indexed and flagged `in_frontmatter`. Invalid YAML is reported, not fatal.
+- **Link resolution** follows Obsidian: exact path → same folder → path suffix → file name
+  (shortest path wins). Ambiguous names are reported by `brain doctor`.
+- **Task ids** use an explicit `🆔` when present, else `sha1(path + text)`. Ids survive
+  moving a task within a note but change when its text changes. Phase 2's
+  `brain_task_update` will match by id and fall back to exact text.
+- **Search** is BM25 with weights title 10, headings 4, tags 3, body 1; AND first, then OR.
+  Snippets mark matches with `«…»` (not `**`, which collides with markdown bold).
+- **Ignored folders:** hidden folders (`.git`, `.obsidian`, `.trash`, …),
+  `_brain/trash`, `_brain/templates`.
+
+## 13. Client setup (target)
 
 ```jsonc
 // Claude Desktop: claude_desktop_config.json

@@ -7,7 +7,25 @@ A markdown second brain and daily planner built to be used **through Claude**.
 - Claude on each of your devices knows where the others left off, through session handoff logs synced over git.
 - No API key needed: Claude does the reasoning under your normal Claude subscription, and embeddings run locally.
 
-> **Status:** design phase. See [`docs/SPEC.md`](docs/SPEC.md).
+> **Status:** Phase 1 done (parser, index, CLI). MCP server is next. See [`docs/SPEC.md`](docs/SPEC.md).
+
+## Quick start
+
+```bash
+npm install
+npm run build
+npm link                      # puts `brain` on your PATH
+
+brain init ~/vault --device laptop-home   # new vault (never overwrites files)
+brain status
+brain search "page tables"
+brain doctor                  # broken links, bad frontmatter, duplicate names
+
+# Point at any existing Obsidian vault without changing it:
+brain status --vault ~/path/to/obsidian-vault
+```
+
+The search index lives in `~/.cache/second-brain/`, not in your vault.
 
 ## How it works
 
