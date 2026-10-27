@@ -6,7 +6,8 @@ import { BrainError } from "../util.js";
 import { LinkResolver } from "../vault/resolve.js";
 import { splitFrontmatter } from "../vault/edit.js";
 import { renderMarkdown } from "./render.js";
-import { loadFont, UI_HTML } from "./ui.js";
+import { loadEditor, loadFont, UI_HTML } from "./ui.js";
+import { findGuest, listGuests, type Guest } from "../share/spaces.js";
 
 const MAX_BODY = 1_000_000;
 
@@ -58,7 +59,20 @@ export const ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"
 export interface WebOptions {
   /** Also accept connections from other devices (phone) that present this token. */
   lanToken?: string;
+  /** Guest links (scoped to one shared space). Defaults to this device's config. */
+  guests?: () => Guest[];
 }
+
+/** What a guest may call. Everything else is refused. */
+const GUEST_ROUTES = new Set([
+  "GET /api/me",
+  "GET /api/tree",
+  "GET /api/note",
+  "GET /api/note/hash",
+  "GET /api/search",
+  "POST /api/note/save",
+  "POST /api/note/create",
+]);
 
 function isLoopback(req: IncomingMessage): boolean {
   const a = req.socket.remoteAddress ?? "";
@@ -98,10 +112,25 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
       const url = new URL(req.url ?? "/", "http://localhost");
       const q = url.searchParams;
       const local = isLoopback(req) && allowedHosts.has(req.headers.host ?? "");
+      let guest: Guest | undefined;
       if (!local) {
-        if (!opts.lanToken) return send(res, 403, { error: "forbidden host" });
+        // Guest links work through --lan or a tunnel (Tailscale Funnel); they only see one shared space.
+        const gGiven = q.get("guest") ?? cookie(req, "shannote_guest");
+        guest = gGiven ? findGuest(gGiven, (opts.guests ?? listGuests)()) : undefined;
+        if (guest && q.get("guest")) {
+          res.writeHead(302, {
+            location: "/#/notes",
+            "set-cookie": `shannote_guest=${q.get("guest")}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000${req.headers["x-forwarded-proto"] === "https" ? "; Secure" : ""}`,
+          });
+          return res.end();
+        }
+      }
+      if (!local && !guest) {
         const given = q.get("token") ?? cookie(req, "brain_token");
-        if (!tokenMatches(given ?? undefined, opts.lanToken)) {
+        if (!opts.lanToken || !tokenMatches(given ?? undefined, opts.lanToken)) {
+          if (gGivenButInvalid(req, q))
+            return send(res, 401, "<!doctype html><meta name=viewport content='width=device-width'><p style='font:16px system-ui;padding:24px'>This share link has been turned off or is wrong. Ask for a new one.</p>", "text/html");
+          if (!opts.lanToken) return send(res, 403, { error: "forbidden host" });
           return send(res, 401, "<!doctype html><meta name=viewport content='width=device-width'><p style='font:16px system-ui;padding:24px'>Open the link with <code>?token=…</code> printed by <code>brain web --lan</code>.</p>", "text/html");
         }
         if (q.get("token")) {
@@ -114,11 +143,21 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
         }
       }
       const source = local ? brain.device : "phone";
+      const spaceDir = guest ? `shared/${guest.space}` : null;
+      const inSpace = (p: string) => !spaceDir || p.startsWith(`${spaceDir}/`);
+      if (guest && !brain.spaces().some((sp) => sp.slug === guest!.space))
+        return send(res, 410, { error: "This shared space no longer exists." });
 
       if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html"))
         return send(res, 200, UI_HTML, "text/html");
       if (req.method === "GET" && url.pathname === "/manifest.webmanifest") return send(res, 200, MANIFEST, "application/manifest+json");
       if (req.method === "GET" && url.pathname === "/icon.svg") return send(res, 200, ICON, "image/svg+xml");
+      if (req.method === "GET" && url.pathname === "/editor.js") {
+        const js = loadEditor();
+        if (!js) return send(res, 404, "// editor not built: run npm run build", "text/javascript");
+        res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache", "x-content-type-options": "nosniff" });
+        return res.end(js);
+      }
       const font = req.method === "GET" && url.pathname.match(/^\/fonts\/(fraunces|literata|nunito)\.woff2$/);
       if (font) {
         const data = loadFont(font[1]!);
@@ -132,7 +171,48 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
         return send(res, 403, { error: "missing x-brain header" });
 
       const route = `${req.method} ${url.pathname}`;
+      if (guest && !GUEST_ROUTES.has(route)) return send(res, 403, { error: "Not available with a share link" });
+      if (guest?.readOnly && req.method === "POST") return send(res, 403, { error: "This share link is read-only" });
+      const editor = guest ? `${guest.name} (guest)` : `eric@${brain.device}`;
+      const commitAs = guest
+        ? { prefix: `guest(${guest.name})`, author: `${guest.name} (guest) <guest-${guest.id}@shannote.local>` }
+        : {};
       switch (route) {
+        case "GET /api/me": {
+          const sp = spaceDir ? brain.spaces().find((x) => x.slug === guest!.space) : undefined;
+          return send(res, 200, guest
+            ? { role: "guest", name: guest.name, space: { slug: guest.space, name: sp?.name ?? guest.space, dir: spaceDir }, readOnly: !!guest.readOnly }
+            : { role: "owner", device: brain.device, spaces: brain.spaces().map((x) => ({ slug: x.slug, name: x.name, dir: x.dir, shared: !!x.remote })) });
+        }
+
+        case "GET /api/note/hash": {
+          const r = brain.hashOf(q.get("path") ?? "");
+          if (!inSpace(r.path)) return send(res, 404, { error: "Note not found" });
+          return send(res, 200, r);
+        }
+
+        case "POST /api/note/save": {
+          const b = await readJson(req);
+          const path = brain.safePath(String(b.path ?? ""));
+          if (!inSpace(path)) return send(res, 403, { error: "Not in your shared space" });
+          return send(res, 200, await brain.save({
+            path,
+            content: String(b.content ?? ""),
+            expectedHash: typeof b.hash === "string" ? b.hash : undefined,
+            force: b.force === true,
+            ...commitAs,
+          }));
+        }
+
+        case "POST /api/note/create": {
+          const b = await readJson(req);
+          const title = String(b.title ?? "").trim();
+          if (!title) throw new BrainError("Give the note a title", "invalid");
+          let folder = String(b.folder ?? "").trim().replace(/^\/+|\/+$/g, "") || (spaceDir ?? "notes");
+          if (spaceDir && !(folder === spaceDir || folder.startsWith(`${spaceDir}/`))) folder = spaceDir;
+          return send(res, 200, await brain.create({ title, folder, by: editor, ...commitAs }));
+        }
+
         case "GET /api/status":
           return send(res, 200, await brain.status());
 
@@ -149,7 +229,7 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
             res,
             200,
             await brain.search(q.get("q") ?? "", {
-              folder: q.get("folder") || undefined,
+              folder: spaceDir && !(q.get("folder") ?? "").startsWith(`${spaceDir}/`) ? spaceDir : q.get("folder") || undefined,
               tag: q.get("tag") || undefined,
               limit: Number(q.get("limit") ?? 30),
               mode: (["hybrid", "keyword", "semantic"].includes(q.get("mode") ?? "") ? q.get("mode") : "hybrid") as "hybrid",
@@ -157,6 +237,19 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
           );
 
         case "GET /api/note": {
+          if (spaceDir) {
+            // Exact paths only: resolving a title could land on a private note.
+            const path = brain.safePath(q.get("path") ?? "");
+            if (!inSpace(path)) return send(res, 404, { error: "Note not found" });
+            const note = await brain.read(path);
+            const { body } = splitFrontmatter(note.content);
+            const paths = (brain.db.prepare("SELECT path FROM notes WHERE substr(path, 1, ?) = ?").all(spaceDir.length + 1, `${spaceDir}/`) as Array<{ path: string }>).map((r) => r.path);
+            return send(res, 200, {
+              ...note,
+              html: renderMarkdown(stripTitle(body), new LinkResolver(paths), note.path),
+              related: { backlinks: [], outgoing: [], unresolved: [], similar: [] },
+            });
+          }
           const note = await brain.read(q.get("path") ?? "");
           const related = await brain.related(note.path);
           const { body } = splitFrontmatter(note.content);
@@ -187,8 +280,8 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
           await brain.fresh();
           const rows = brain.db
             .prepare("SELECT path, title, word_count, mtime_ms FROM notes ORDER BY path")
-            .all();
-          return send(res, 200, rows);
+            .all() as Array<{ path: string }>;
+          return send(res, 200, spaceDir ? rows.filter((r) => inSpace(r.path)) : rows);
         }
 
         case "GET /api/handoffs":
@@ -284,7 +377,7 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
     } catch (e) {
       const status = e instanceof BrainError ? ({ not_found: 404, conflict: 409, exists: 409 } as Record<string, number>)[e.code] ?? 400 : 500;
       if (status === 500) process.stderr.write(`[brain web] ${(e as Error).stack}\n`);
-      send(res, status, { error: (e as Error).message });
+      send(res, status, { error: (e as Error).message, ...((e as { details?: object }).details ?? {}) });
     }
   });
 
@@ -294,6 +387,10 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
   });
   server.listen(port, host);
   return server;
+}
+
+function gGivenButInvalid(req: IncomingMessage, q: URLSearchParams): boolean {
+  return !!(q.get("guest") || cookie(req, "shannote_guest"));
 }
 
 /** The page header already shows the title, so drop a leading H1. */

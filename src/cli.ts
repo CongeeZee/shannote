@@ -33,6 +33,15 @@ Usage:
                                         Print a planning prompt (what Claude gets)
   brain schedule                        How to run the morning brief / evening review automatically
 
+Sharing (each shared space is its own git repo under shared/; the rest of the vault stays private):
+  brain share create <name> [--github]  New shared space (--github: make a private GitHub repo for it)
+  brain share invite <space> <github-user>   Give a GitHub user edit access (needs gh)
+  brain share join <git-url> [--name N] Clone a space someone shared with you
+  brain share guest <space> <person> [--read-only]
+                                        Browser link for someone without GitHub (see docs/SHARING.md)
+  brain share url <https://…>           Public address for guest links (e.g. Tailscale Funnel)
+  brain share list | revoke <guest|space>
+
 Global options:
   --vault <path>   Vault to use (default: BRAIN_VAULT or the path saved by init)
   --json           Machine-readable output
@@ -58,6 +67,8 @@ const { values, positionals } = parseArgs({
     mode: { type: "string" },
     name: { type: "string" },
     date: { type: "string" },
+    github: { type: "boolean", default: false },
+    "read-only": { type: "boolean", default: false },
     event: { type: "string" },
     morning: { type: "string" },
     evening: { type: "string" },
@@ -410,6 +421,101 @@ Notes:
       process.on("SIGINT", stop);
       process.on("SIGTERM", stop);
       return new Promise<number>(() => {});
+    }
+
+    case "share": {
+      const sp = await import("./share/spaces.js");
+      const { loadConfig, saveConfig: save } = await import("./config.js");
+      const { spawnSync } = await import("node:child_process");
+      const vault = resolveVault(values.vault);
+      const sub = args[0] ?? "list";
+      const gh = (a: string[], cwd?: string) => {
+        const r = spawnSync("gh", a, { cwd, encoding: "utf8", timeout: 60_000 });
+        if (r.error) throw new Error("This needs the GitHub CLI (`gh`). Install it and run `gh auth login`.");
+        if (r.status !== 0) throw new Error((r.stderr || r.stdout).trim());
+        return r.stdout.trim();
+      };
+      const publicUrl = (loadConfig() as { publicUrl?: string }).publicUrl;
+
+      if (sub === "create") {
+        const name = args.slice(1).join(" ").trim();
+        if (!name) throw new Error("Usage: brain share create <name> [--github]");
+        const s = sp.createSpace(vault, name, deviceName());
+        console.log(`Created ${s.dir}/ ("${s.name}"). Notes in that folder are shared; everything else stays private.`);
+        if (values.github) {
+          const repoName = `shannote-${s.slug}`;
+          gh(["repo", "create", repoName, "--private", "--source=.", "--push"], `${vault}/${s.dir}`);
+          console.log(`Pushed to a new private GitHub repo: ${repoName}. Invite people with \`brain share invite ${s.slug} <github-user>\`.`);
+        } else {
+          console.log(`To share with GitHub users: \`cd ${vault}/${s.dir} && gh repo create shannote-${s.slug} --private --source=. --push\`.`);
+          console.log(`For people without GitHub: \`brain share guest ${s.slug} <their name>\`.`);
+        }
+        return 0;
+      }
+      if (sub === "join") {
+        const url = args[1];
+        if (!url) throw new Error("Usage: brain share join <git-url> [--name N]");
+        const s = sp.joinSpace(vault, url, values.name, deviceName());
+        console.log(`Joined "${s.name}" at ${s.dir}/. It syncs along with your vault.`);
+        return 0;
+      }
+      if (sub === "invite") {
+        const [, ref, user] = args;
+        if (!ref || !user) throw new Error("Usage: brain share invite <space> <github-user>");
+        const s = sp.getSpace(vault, ref);
+        const repo = sp.githubRepo(s.remote);
+        if (!repo) throw new Error(`${s.dir} isn't on GitHub yet. Run \`brain share create\` with --github, or add a GitHub remote to it.`);
+        gh(["api", "-X", "PUT", `repos/${repo}/collaborators/${user.replace(/^@/, "")}`, "-f", "permission=push", "--silent"]);
+        console.log(`Invited ${user} to ${repo}. Once they accept (GitHub emails them), they run:\n  brain share join https://github.com/${repo} --name "${s.name}"`);
+        return 0;
+      }
+      if (sub === "guest") {
+        const [, ref, ...who] = args;
+        if (!ref || !who.length) throw new Error("Usage: brain share guest <space> <person's name> [--read-only]");
+        const s = sp.getSpace(vault, ref);
+        const { guest, token } = sp.createGuest(s.slug, who.join(" "), { readOnly: values["read-only"] });
+        console.log(`Share link for ${guest.name} (${guest.readOnly ? "read-only" : "can edit"} "${s.name}" only). Send it privately; it's shown only now.\n`);
+        if (publicUrl) console.log(`  ${publicUrl.replace(/\/+$/, "")}/?guest=${token}\n`);
+        else {
+          const { networkInterfaces } = await import("node:os");
+          const ips = Object.values(networkInterfaces()).flat()
+            .filter((i): i is NonNullable<typeof i> => !!i && i.family === "IPv4" && !i.internal).map((i) => i.address);
+          for (const ip of ips) console.log(`  http://${ip}:4567/?guest=${token}`);
+          console.log("\nThese addresses only work on your network, while `brain web --lan` runs. For friends anywhere,");
+          console.log("set up Tailscale Funnel and run `brain share url https://<your-machine>.<tailnet>.ts.net` (docs/SHARING.md),");
+          console.log("then make a new link.\n");
+        }
+        console.log(`Turn it off any time: brain share revoke ${guest.id}`);
+        return 0;
+      }
+      if (sub === "url") {
+        const u = args[1];
+        if (!u || !/^https:\/\//.test(u)) throw new Error("Usage: brain share url https://<address>  (must be https)");
+        save({ publicUrl: u.replace(/\/+$/, "") } as never);
+        console.log(`Guest links will use ${u}. Existing links keep working at the new address too.`);
+        return 0;
+      }
+      if (sub === "revoke") {
+        const ref = args.slice(1).join(" ").trim();
+        if (!ref) throw new Error("Usage: brain share revoke <guest id | name | space>");
+        const gone = sp.revokeGuest(ref);
+        console.log(`Turned off ${gone.length} link${gone.length === 1 ? "" : "s"}: ${gone.map((g) => `${g.name} (${g.space})`).join(", ")}`);
+        return 0;
+      }
+      if (sub === "list") {
+        const spaces = sp.listSpaces(vault);
+        const guests = sp.listGuests();
+        out({ spaces, guests: guests.map(({ tokenHash: _t, ...g }) => g), publicUrl }, () => {
+          if (!spaces.length) return "No shared spaces yet. `brain share create <name>` makes one.";
+          return spaces.map((x) => {
+            const g = guests.filter((y) => y.space === x.slug);
+            return `${x.name}  (${x.dir})\n  repo: ${x.remote ?? "local only"}\n` +
+              (g.length ? g.map((y) => `  guest: ${y.name}${y.readOnly ? " (read-only)" : ""}  id ${y.id}`).join("\n") : "  no guest links");
+          }).join("\n\n");
+        });
+        return 0;
+      }
+      throw new Error(`Unknown share command "${sub}". See \`brain --help\`.`);
     }
 
     case "sync": {

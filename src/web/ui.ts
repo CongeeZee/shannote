@@ -32,3 +32,19 @@ export function loadFont(name: string): Buffer | null {
   fontCache.set(name, data);
   return data;
 }
+
+let editorCache: Buffer | null | undefined;
+
+/** The bundled editor (dist/editor.js, built by `npm run build:editor`). */
+export function loadEditor(): Buffer | null {
+  if (editorCache !== undefined) return editorCache;
+  editorCache = null;
+  for (const rel of ["./editor.js", "../../dist/editor.js", "../dist/editor.js"]) {
+    const p = fileURLToPath(new URL(rel, import.meta.url));
+    if (existsSync(p)) {
+      editorCache = readFileSync(p);
+      break;
+    }
+  }
+  return editorCache;
+}

@@ -19,6 +19,7 @@
     "test"
   ],
   "exclude": [
-    "test/fixtures"
+    "test/fixtures",
+    "src/web/editor"
   ]
 }

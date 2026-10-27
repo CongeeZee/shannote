@@ -122,13 +122,13 @@ export class GitSync {
    * Commits the given paths (or everything when omitted). Deletions and
    * renames are included. Returns the commit sha, or null if nothing changed.
    */
-  commit(message: string, paths?: string[]): string | null {
+  commit(message: string, paths?: string[], author?: string): string | null {
     if (!this.isRepo()) return null;
     if (paths && paths.length) this.git(["add", "-A", "--", ...paths]);
     else this.git(["add", "-A"]);
     const staged = this.run(["diff", "--cached", "--quiet"]);
     if (staged.code === 0) return null;
-    this.git([...this.identityArgs(), "commit", "-q", "--no-verify", "-m", message]);
+    this.git([...this.identityArgs(), "commit", "-q", "--no-verify", ...(author ? [`--author=${author}`] : []), "-m", message]);
     return this.git(["rev-parse", "--short", "HEAD"]).trim();
   }
 

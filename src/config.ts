@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -46,7 +46,13 @@ export function loadConfig(): MachineConfig {
 export function saveConfig(update: MachineConfig): MachineConfig {
   const next = { ...loadConfig(), ...update };
   mkdirSync(configDir(), { recursive: true });
-  writeFileSync(join(configDir(), "config.json"), `${JSON.stringify(next, null, 2)}\n`);
+  // Holds secrets (calendar URLs, web and guest tokens): owner-only.
+  writeFileSync(join(configDir(), "config.json"), `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+  try {
+    chmodSync(join(configDir(), "config.json"), 0o600);
+  } catch {
+    /* not supported (Windows) */
+  }
   return next;
 }
 

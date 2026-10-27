@@ -10,8 +10,9 @@ The CLI is `shannote`; `brain` is a short alias for every command.
 - Claude on each of your devices knows where the others left off, through session handoff logs synced over git.
 - No API key needed: Claude does the reasoning under your normal Claude subscription, and embeddings run locally.
 
-> **Status:** Phase 5 built: inbox triage, link suggestions, context packs and phone access,
-> on top of planning, calendar, search, sync, handoffs and the web app.
+> **Status:** Phase 6 in progress: an in-app markdown editor (live preview, vim keys) and
+> sharing (shared spaces + guest links), on top of inbox triage, planning, calendar, search,
+> sync, handoffs and the web app.
 > See [`docs/SPEC.md`](docs/SPEC.md).
 
 ## Setup (per device)
@@ -71,7 +72,19 @@ brain web --open          # http://localhost:4567
 Today view (schedule, daily note, overdue/due/upcoming tasks, latest handoffs, threads),
 an Inbox page that files captures with one click, search (with "copy context pack"),
 tasks, a notes browser with link suggestions, handoffs, and a health page. The
-capture bar at the top appends to today's inbox. Keys: `/` search, `c` capture, `t` today.
+capture bar at the top appends to today's inbox. Keys: `/` search, `c` capture, `t` today,
+`e` edit the open note.
+
+**Editing**: open a note and switch to **Edit**. You write markdown and it's styled as you go
+(the markup shows only on the line you're on). It saves as you type, and if Claude or another
+device changed the note meanwhile it asks before overwriting. Toggle **Vim** in the editor bar
+(`:w` saves, `:q` goes back to reading). Ctrl-click a link to follow it, Ctrl-Enter toggles a
+task. **+ New note** is on the Notes page.
+
+**Sharing**: `brain share create "Thesis Group" --github` makes `shared/thesis-group/`, a folder
+with its own private repo. Invite GitHub users with `brain share invite`, or give anyone a
+browser link with `brain share guest thesis-group "Alex"`. Guests only ever see that space.
+See [`docs/SHARING.md`](docs/SHARING.md).
 
 **Claude Desktop**: add to `~/.config/Claude/claude_desktop_config.json` (Linux) or
 `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), then restart Claude:
@@ -110,7 +123,7 @@ other options.
 (runs `claude -p` with your subscription while the laptop is awake). Claude calls `brain_begin_session` at the start
 and `brain_end_session` when you wrap up, which is what lets the next device continue.
 
-**CLI**: `brain app [install|stop] | status | search <q> [--mode …] | embed | calendar … | plan <kind> | schedule | doctor | sync | index`
+**CLI**: `brain app [install|stop] | status | search <q> [--mode …] | embed | calendar … | share … | plan <kind> | schedule | doctor | sync | index`
 
 > Git sync only runs in folders set up with `brain init`. You can safely run
 > `brain web --vault ~/path/to/obsidian-vault` to look around: it won't commit, pull or push
@@ -138,7 +151,7 @@ Claude (Desktop / Code) ──MCP──► brain ──► ~/vault (markdown + g
 3. ✅ Local embeddings + hybrid search
 4. 🟡 Planning prompts, calendar, rollover, recurring tasks (built; needs a week of use)
 5. 🟡 Inbox triage, link suggestions, context packs, phone access (built; needs use)
-6. Web app: editing, graph, calendar strip
+6. 🟡 Web app: editor ✅, sharing ✅, graph and calendar strip to do
 7. (optional) Hosted hub for phone/remote access
 
 ## License

@@ -13,7 +13,8 @@ export const INSTRUCTIONS = `You are connected to Shannote, Eric's second brain:
 - Never invent note contents. When answering from notes, cite their paths.
 - For quick thoughts, use brain_capture (goes to the inbox) rather than creating new notes.
 - For "plan my day", "how did today go", "weekly review" or "prep me for <meeting>", call brain_plan with kind morning / evening / weekly / meeting and follow the instructions it returns.
-- For "triage my inbox" call brain_inbox (action "list", with_instructions true); for "suggest links" call brain_links (action "suggest", with_instructions true); for "give me context on X" call brain_context_pack.`;
+- For "triage my inbox" call brain_inbox (action "list", with_instructions true); for "suggest links" call brain_links (action "suggest", with_instructions true); for "give me context on X" call brain_context_pack.
+- Notes under shared/<space>/ are shared spaces: other people (friends, guests) can read and edit them. Never copy, move or summarise private notes into a shared space unless Eric asks for exactly that. Edits there may come from others (commit subjects like "guest(Name): …").`;
 
 type Json = Record<string, unknown> | unknown[];
 

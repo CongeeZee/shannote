@@ -38,6 +38,7 @@ import { parseNote } from "./vault/parse.js";
 import { parseInbox, type InboxEntry } from "./inbox.js";
 import { findUnlinkedMentions, linkMention } from "./links.js";
 import { readdirSync, unlinkSync } from "node:fs";
+import { listSpaces, spaceSlugOf, SHARED_DIR, type Space } from "./share/spaces.js";
 import { eventsBetween, type CalendarEvent } from "./plan/calendar.js";
 import { isWhenDone, nextOccurrence } from "./plan/recur.js";
 import { parseSchedule, sectionOf } from "./plan/schedule.js";
@@ -111,6 +112,7 @@ function clip(text: string, max: number): string {
   return `${(at > max * 0.5 ? cut.slice(0, at) : cut.replace(/\s+\S*$/, "")).trimEnd()} …`;
 }
 const PUSH_DEBOUNCE_MS = 10_000;
+const SAVE_COMMIT_DELAY_MS = 30_000;
 const ILLEGAL_NAME_CHARS = /[\\/:*?"<>|#^[\]]/g;
 
 export class Brain {
@@ -121,6 +123,7 @@ export class Brain {
   readonly sync: GitSync;
 
   private lastPullAt = 0;
+  private lastSpacePullAt = 0;
   private pushTimer: NodeJS.Timeout | null = null;
   private autoPush: boolean;
   private trackSessions: boolean;
@@ -137,6 +140,10 @@ export class Brain {
   private embedRun: Promise<number> | null = null;
   private embedError: { message: string; at: number } | null = null;
   private stopping = false;
+  /** Git repos for shared spaces (shared/<slug>/), keyed by slug. */
+  private spaceSyncs = new Map<string, GitSync>();
+  /** Editor saves are written at once but committed after a pause, so typing doesn't make hundreds of commits. */
+  private pendingSaves = new Map<string, { timer: NodeJS.Timeout; author?: string; prefix: string }>();
 
   constructor(opts: BrainOptions) {
     this.vault = opts.vault;
@@ -159,10 +166,29 @@ export class Brain {
     let pulled: PullResult | null = null;
     if (this.syncEnabled && (opts.forcePull || Date.now() - this.lastPullAt > PULL_INTERVAL_MS)) {
       this.lastPullAt = Date.now();
+      this.flushSaves();
       try {
         pulled = this.sync.pull();
       } catch (e) {
         pulled = { status: "offline", changed: [], conflicts: [], error: (e as Error).message };
+      }
+    }
+    if (opts.forcePull || Date.now() - this.lastSpacePullAt > PULL_INTERVAL_MS) {
+      this.lastSpacePullAt = Date.now();
+      const spaces = this.spaces();
+      if (spaces.length) this.flushSaves();
+      for (const sp of spaces) {
+        const g = this.spaceSync(sp.slug);
+        if (!g.hasRemote()) continue;
+        try {
+          const r = g.pull();
+          if (pulled) {
+            pulled.changed.push(...r.changed.map((c) => `${sp.dir}/${c}`));
+            pulled.conflicts.push(...r.conflicts.map((c) => ({ path: `${sp.dir}/${c.path}`, copy: `${sp.dir}/${c.copy}` })));
+          }
+        } catch {
+          /* offline: try again next time */
+        }
       }
     }
     await this.reindex();
@@ -225,6 +251,7 @@ export class Brain {
   /** Flush pending pushes and write an implicit session log if needed. Synchronous. */
   shutdown(): void {
     this.stopping = true;
+    this.flushSaves();
     if (this.session && !this.session.ended && this.session.touched.size > 0) {
       const rel = writeSessionLog(this.vault, {
         device: this.device,
@@ -244,19 +271,52 @@ export class Brain {
     if (this.pushTimer) {
       clearTimeout(this.pushTimer);
       this.pushTimer = null;
-      if (this.autoPush && this.syncEnabled) this.sync.push();
+      if (this.autoPush) this.pushAll();
     }
     this.db.close();
   }
 
   private schedulePush(): void {
-    if (!this.autoPush || !this.syncEnabled) return;
+    if (!this.autoPush) return;
     if (this.pushTimer) clearTimeout(this.pushTimer);
     this.pushTimer = setTimeout(() => {
       this.pushTimer = null;
-      this.sync.push();
+      this.pushAll();
     }, PUSH_DEBOUNCE_MS);
     this.pushTimer.unref?.();
+  }
+
+  private pushAll() {
+    const out: Record<string, ReturnType<GitSync["push"]>> = {};
+    if (this.syncEnabled) out.vault = this.sync.push();
+    for (const sp of this.spaces()) {
+      const g = this.spaceSync(sp.slug);
+      if (g.hasRemote()) out[sp.dir] = g.push();
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------ shared spaces
+
+  spaces(): Space[] {
+    return listSpaces(this.vault);
+  }
+
+  spaceSync(slug: string): GitSync {
+    let g = this.spaceSyncs.get(slug);
+    if (!g) {
+      g = new GitSync(join(this.vault, SHARED_DIR, slug), this.device);
+      this.spaceSyncs.set(slug, g);
+    }
+    return g;
+  }
+
+  /** Which git repo a vault path is committed to: a shared space's, or the vault's. */
+  private repoFor(rel: string): { sync: GitSync; rel: string; enabled: boolean } {
+    const slug = spaceSlugOf(rel);
+    if (slug && existsSync(join(this.vault, SHARED_DIR, slug, ".git")))
+      return { sync: this.spaceSync(slug), rel: rel.slice(SHARED_DIR.length + slug.length + 2), enabled: true };
+    return { sync: this.sync, rel, enabled: this.syncEnabled };
   }
 
   private touch(paths: string[]): void {
@@ -467,17 +527,88 @@ export class Brain {
 
   // ------------------------------------------------------------ writes
 
-  private writeAndCommit(paths: string[], message: string): string | null {
+  private writeAndCommit(
+    paths: string[],
+    message: string,
+    opts: { prefix?: string; author?: string; track?: boolean } = {},
+  ): string | null {
     let sha: string | null = null;
-    try {
-      if (this.syncEnabled) sha = this.sync.commit(`brain(${this.device}): ${message}`, paths);
-    } catch (e) {
-      // A failed commit must not lose the write; it will be picked up as an external edit.
-      process.stderr.write(`[brain] commit failed: ${(e as Error).message}\n`);
+    // A move or a write can touch both the vault and a shared space: one commit per repo.
+    const groups = new Map<GitSync, string[]>();
+    for (const p of paths) {
+      const r = this.repoFor(p);
+      if (!r.enabled) continue;
+      groups.set(r.sync, [...(groups.get(r.sync) ?? []), r.rel]);
     }
-    this.touch(paths);
+    for (const [g, rels] of groups) {
+      try {
+        sha = g.commit(`${opts.prefix ?? `brain(${this.device})`}: ${message}`, rels, opts.author) ?? sha;
+      } catch (e) {
+        // A failed commit must not lose the write; it will be picked up as an external edit.
+        process.stderr.write(`[brain] commit failed: ${(e as Error).message}\n`);
+      }
+    }
+    if (opts.track !== false) this.touch(paths);
     if (sha) this.schedulePush();
     return sha;
+  }
+
+  /** Commits editor saves that are still waiting (before a pull, sync or exit). */
+  flushSaves(): void {
+    for (const [path, p] of this.pendingSaves) {
+      clearTimeout(p.timer);
+      this.pendingSaves.delete(path);
+      this.writeAndCommit([path], `edit ${path}`, { prefix: p.prefix, author: p.author, track: false });
+    }
+  }
+
+  /**
+   * Replaces a note's whole text: the in-app editor's save. Refuses if the note
+   * changed since the editor loaded it (expectedHash) unless `force`.
+   */
+  async save(input: {
+    path: string;
+    content: string;
+    expectedHash?: string;
+    force?: boolean;
+    /** Commit subject prefix and author, e.g. guest edits. */
+    prefix?: string;
+    author?: string;
+  }) {
+    const path = this.safePath(input.path);
+    const abs = this.abs(path);
+    if (!existsSync(abs)) throw new BrainError(`Note not found: ${path}`, "not_found");
+    const before = readFileSync(abs, "utf8");
+    const current = sha1(before).slice(0, 16);
+    if (input.expectedHash && input.expectedHash !== current && !input.force) {
+      const err = new BrainError(`${path} was changed somewhere else since you opened it.`, "conflict");
+      (err as BrainError & { details?: unknown }).details = { hash: current, content: before };
+      throw err;
+    }
+    if (input.content.length > 2_000_000) throw new BrainError("Note too large", "invalid");
+    if (input.content !== before) {
+      this.writeFile(path, input.content);
+      const prefix = input.prefix ?? `edit(${this.device})`;
+      const prev = this.pendingSaves.get(path);
+      if (prev && (prev.prefix !== prefix || prev.author !== input.author)) this.flushSaves(); // different person: separate commits
+      clearTimeout(this.pendingSaves.get(path)?.timer);
+      const timer = setTimeout(() => {
+        this.pendingSaves.delete(path);
+        this.writeAndCommit([path], `edit ${path}`, { prefix, author: input.author, track: false });
+      }, SAVE_COMMIT_DELAY_MS);
+      timer.unref?.();
+      this.pendingSaves.set(path, { timer, prefix, author: input.author });
+      await this.reindex();
+    }
+    return { path, hash: sha1(input.content).slice(0, 16) };
+  }
+
+  /** Current hash of a note, for the editor to notice saves made elsewhere. */
+  hashOf(ref: string): { path: string; hash: string } {
+    const path = this.safePath(ref);
+    const abs = this.abs(path);
+    if (!existsSync(abs)) throw new BrainError(`Note not found: ${path}`, "not_found");
+    return { path, hash: sha1(readFileSync(abs, "utf8")).slice(0, 16) };
   }
 
   private writeFile(rel: string, content: string): void {
@@ -501,6 +632,9 @@ export class Brain {
     template?: string;
     content?: string;
     frontmatter?: Record<string, unknown>;
+    by?: string;
+    prefix?: string;
+    author?: string;
   }) {
     await this.fresh();
     const fileName = input.title.replace(ILLEGAL_NAME_CHARS, " ").replace(/\s+/g, " ").trim() || "Untitled";
@@ -523,9 +657,9 @@ export class Brain {
     }
     if (input.frontmatter && Object.keys(input.frontmatter).length)
       content = setFrontmatter(content, input.frontmatter);
-    content = stamp(content, `claude@${this.device}`, now);
+    content = stamp(content, input.by ?? `claude@${this.device}`, now);
     this.writeFile(rel, content);
-    this.writeAndCommit([rel], `create ${rel}`);
+    this.writeAndCommit([rel], `create ${rel}`, { prefix: input.prefix, author: input.author });
     await this.reindex();
     return { path: rel, hash: sha1(content).slice(0, 16) };
   }
@@ -1246,11 +1380,15 @@ export class Brain {
   }
 
   async syncNow() {
-    if (!this.syncEnabled) throw new BrainError("Sync is off: this folder wasn't set up with `brain init`.", "invalid");
+    const spaces = this.spaces();
+    if (!this.syncEnabled && !spaces.length)
+      throw new BrainError("Sync is off: this folder wasn't set up with `brain init`.", "invalid");
+    this.flushSaves();
     const pull = await this.fresh({ forcePull: true });
-    const committed = this.sync.commitExternalEdits();
-    const push = this.sync.push();
+    const committed = this.syncEnabled ? this.sync.commitExternalEdits() : null;
+    for (const sp of spaces) this.spaceSync(sp.slug).commitExternalEdits();
+    const pushes = this.pushAll();
     await this.reindex();
-    return { pull, committed, push, status: this.sync.status() };
+    return { pull, committed, push: pushes.vault ?? { status: "no_remote" as const }, spaces: pushes, status: this.sync.status() };
   }
 }

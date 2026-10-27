@@ -27,10 +27,10 @@ Claude owns reasoning. They talk over the Model Context Protocol (MCP).
 
 ### Non-goals (for now)
 
-- Building a full editor. Obsidian (or any editor) remains the editor. The local
-  web app (brought forward at Eric's request in Phase 2) is for viewing, planning,
-  capture and task ticking, not long-form editing.
-- Multi-user collaboration.
+- ~~Building a full editor.~~ Changed in Phase 6 at Eric's request: the web app has a
+  markdown editor (live preview, optional vim keys). Obsidian still works on the same files.
+- ~~Multi-user collaboration.~~ Changed in Phase 6: shared spaces (separate git repos)
+  and guest links. Still no real-time co-editing (see §18).
 - Real-time sync. Sync is git-based and eventually consistent (seconds–minutes).
 
 ---
@@ -365,7 +365,7 @@ Each phase ends with something Eric uses daily for about a week before moving on
 | **3** ✅ | Local embeddings + hybrid search + `brain_related` | Semantic queries find notes with no keyword overlap. *Met: real-model test in `test/semantic.test.ts`; on Eric's 148-note vault, "keeping data consistent after a crash" finds the journalling notes.* |
 | **4** 🟡 | Planning prompts (`morning_brief`, `evening_review`, `weekly_review`, `meeting_prep`) + optional scheduled `claude -p` runner | Eric's daily note is produced from the morning brief for a week. *Built and tested; the week of real use hasn't happened yet.* |
 | **5** 🟡 | Second-brain prompts (`triage_inbox`, `link_suggestions`, `context_pack`), phone capture setup guide | Inbox reaches zero via triage. *Built (incl. web Inbox page and `brain web --lan` for phones); needs real use.* |
-| **6** | Web app, round 2: in-place editing of daily notes, graph view, calendar strip (once Phase 4 calendar data exists), installable PWA | Eric uses the web app daily instead of Obsidian for planning |
+| **6** 🟡 | Web app, round 2: **note editor** (live preview, vim keys, conflict-safe autosave, new notes) ✅, **shared spaces + guest links** ✅; graph view and calendar strip still to do | Eric edits in the app instead of Obsidian, and shares at least one space. *Started before 4–5 had their week of use, because Eric asked for editing and sharing.* |
 | **7** | (Optional) Hosted hub: remote MCP endpoint (auth), server-side scheduled jobs, phone Claude access | Only if git-only limits bite |
 
 ---
@@ -567,3 +567,45 @@ Each phase ends with something Eric uses daily for about a week before moving on
 # Claude Code
 claude mcp add brain --scope user -- npx -y shannote serve
 ```
+
+## 18. Implementation notes (Phase 6: editor and sharing)
+
+- **Editor**: CodeMirror 6, bundled with esbuild to `dist/editor.js` (`src/web/editor/`,
+  its own tsconfig with DOM types). Live preview hides markdown markup except on the
+  line(s) with the cursor; tasks become clickable checkboxes, bullets become "•",
+  `[[links]]` and `[text](url)` show as links (Ctrl/Cmd-click to follow), frontmatter folds
+  into a "Properties" chip. Vim mode is `@replit/codemirror-vim` in a compartment, toggled
+  per browser (`:w` saves, `:q` / `:wq` return to reading). Read/Edit mode is remembered;
+  `e` toggles it.
+- **Saving**: `Brain.save` replaces the whole file, guarded by the hash the editor loaded
+  (409 with the current text and hash on mismatch; the UI offers "Load their version" /
+  "Keep mine", which re-saves with `force`). Saves are debounced ~1s in the browser; the
+  file is written immediately, but the **commit** waits 30s after the last save to the
+  note (flushed before any pull, sync or exit), so a typing session is one commit. Editor
+  saves aren't stamped with `updated`/`updated_by` (git records the author, and stamping
+  would rewrite text under the cursor). Not exposed over MCP: Claude keeps using exact-match
+  `brain_edit` ops. The editor polls the note's hash every 4s and reloads it when it
+  changed elsewhere and there are no unsaved local edits.
+- **Shared spaces**: `shared/<slug>/` folders that are their own git repos (with a
+  `.shannote-space.json` holding the display name). The vault's `.gitignore` gets
+  `/shared/` (committed) when the first space is made or joined. `Brain` routes every write
+  to the repo that owns the path (one commit per repo when a change spans both), pulls
+  spaces on the same once-a-minute schedule as the vault, and pushes all repos together.
+  Spaces are indexed and searchable like any folder. CLI: `share create [--github] | join |
+  invite | list`. GitHub invites use `gh api …/collaborators/<user>` with push permission.
+- **Guest links**: a random 24-byte token per person per space; only its SHA-256 is stored,
+  in the machine config (now written with mode 0600). A request counts as the owner only
+  if it comes from loopback with a localhost Host header, so traffic arriving through
+  Tailscale Funnel or a tunnel (loopback, public Host) is never the owner. `?guest=` is
+  swapped for an HttpOnly SameSite=Lax cookie (Lax so the link works when opened from a
+  chat app). Guests get an allow-list of seven API routes; every path is checked to be
+  inside their space, notes are fetched by exact path (titles could resolve to private
+  notes), links render against the space only, search is forced into the space, and
+  related/backlinks are not returned. Guest edits are committed with
+  `--author "Name (guest) <guest-id@shannote.local>"` and subject `guest(Name): …`.
+  `--read-only` links refuse all POSTs. `share url` stores the public https base used to
+  print links. Guide: `docs/SHARING.md`.
+- **Known limits**: no merge of simultaneous edits to the same note (last save loses only
+  after an explicit "Keep mine"); guest links need the owner's laptop awake; there's no
+  per-guest rate limiting (tokens are 192-bit, so guessing isn't practical); guests can't
+  delete or move notes.

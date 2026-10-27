@@ -35,9 +35,11 @@ src/
   plan/       calendar (iCal), schedule parsing, recurrence, planning rituals
   inbox.ts    inbox entry parsing · links.ts unlinked mentions · curate.ts triage/link prompts
   mcp/        MCP server (tools, resource, instructions)
+  share/      shared spaces (shared/<slug>/ = own git repo) and guest links
   web/        local web app: HTTP API, markdown rendering, ui.html (vanilla JS)
+  web/editor/ CodeMirror editor (browser code, bundled by esbuild to dist/editor.js)
   app.ts      desktop launcher (.desktop / macOS .app) and app-mode window
-  cli.ts      brain init|app|index|status|search|embed|calendar|plan|schedule|doctor|web|serve|sync
+  cli.ts      brain init|app|index|status|search|embed|calendar|plan|schedule|share|doctor|web|serve|sync
 test/
   fixtures/vault/   synthetic notes covering edge cases
   helpers.ts        twoDevices(): bare remote + two clones, one Brain each
@@ -56,6 +58,12 @@ pointed at a scratch folder. The index never writes inside the vault.
 ## Semantic search in tests
 Unit tests use `HashEmbedder` (bag of words) so they never download a model. The
 real-model test runs only with `BRAIN_TEST_MODEL_PATH=<folder containing Xenova/all-MiniLM-L6-v2>`.
+
+## Sharing rules
+- Anything under `shared/` may be read by other people. Guest-facing API routes must check
+  every path with `inSpace()` and fetch notes by exact path, never by title.
+- Any new web route is owner-only unless it's added to `GUEST_ROUTES` in `web/server.ts`
+  with a test in `test/share.test.ts`.
 
 ## Commands
 - `npm run build` · `npm test` · `npm run typecheck` · `npm run dev -- <command>`
