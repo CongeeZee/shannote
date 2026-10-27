@@ -243,6 +243,7 @@ details.callout[open] > .callout-title::after { transform: rotate(90deg); }
 .linklist li a:hover { background: var(--panel-2); }
 .toc a { color: var(--muted); font-weight: 600; }
 .toc a:hover { color: var(--text); }
+.toc code { font-family: var(--mono); font-size: .86em; background: var(--panel-2); border-radius: 5px; padding: 0 4px; }
 .toc .l3 { padding-left: 30px !important; font-weight: 500; } .toc .l4 { padding-left: 42px !important; font-weight: 500; }
 
 /* search */
@@ -554,7 +555,8 @@ function inline(text) {
   return esc(text)
     .replace(/\[\[([^\]|#]*)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (_, t, a) => '<span class="wikilink">' + (a || t) + "</span>")
     .replace(/(^|\s)#([\w\-/]+)/g, '$1<span class="pill">#$2</span>')
-    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
 function taskItem(t, opts = {}) {
@@ -764,7 +766,7 @@ const views = {
     const obsidian = "obsidian://open?vault=" + enc(n.vaultName) + "&file=" + enc(n.path.replace(/\.md$/, ""));
     const linkList = (title, items, empty) => '<section class="card"><div class="card-h">' + title + ' <span class="n">' + items.length + "</span></div>" +
       (items.length ? '<ul class="linklist">' + items.map((i) => '<li><a href="' + noteHref(i.path) + '">' + esc(i.title) + "</a></li>").join("") + "</ul>" : '<div class="empty">' + empty + "</div>") + "</section>";
-    const toc = n.headings.filter((h) => /^#{2,4} /.test(h));
+    const toc = sourceOutline(n.content).headings.filter((h) => h.level >= 2 && h.level <= 4);
     const pillRow = (html) => html ? '<div class="note-meta">' + html + "</div>" : "";
     view.innerHTML =
       '<div class="note-layout"><article><div class="note-head"><div class="crumbs">' + (crumbs || "&nbsp;") + "</div><h1>" + esc(n.title) + "</h1>" +
@@ -777,7 +779,7 @@ const views = {
         (fm.summary && !editing ? '<p class="note-summary">' + esc(fm.summary) + "</p>" : "") +
         '<div class="card" id="note-card"><div class="note-body prose">' + (n.html.trim() || '<p class="faint">Empty note. Switch to Edit to write something.</p>') + "</div></div></article>" +
       '<aside class="aside owner-only">' +
-        (toc.length > 2 ? '<section class="card"><div class="card-h">On this page</div><ul class="linklist toc">' + toc.map((h) => { const lvl = h.match(/^#+/)[0].length; const text = h.replace(/^#+ /, ""); return '<li><a class="l' + lvl + '" href="#" data-jump="' + esc(text) + '">' + inline(text) + "</a></li>"; }).join("") + "</ul></section>" : "") +
+        (toc.length > 2 ? '<section class="card"><div class="card-h">On this page</div><ul class="linklist toc">' + toc.map((h, i) => '<li><a class="l' + h.level + '" href="#" data-toc="' + i + '">' + inline(h.raw) + "</a></li>").join("") + "</ul></section>" : "") +
         linkList("Backlinks", n.related.backlinks, "Nothing links here yet.") +
         linkList("Links", n.related.outgoing, "No outgoing links.") +
         (n.related.similar && n.related.similar.length ? '<section class="card" id="similar"><div class="card-h">Similar, not linked <span class="n">' + n.related.similar.length + '</span></div><ul class="linklist">' + n.related.similar.map((x) => '<li><span><a href="' + noteHref(x.path) + '" style="padding:0;display:inline">' + esc(x.title) + '</a> <button class="btn sm ghost" data-link="' + esc(x.path) + '" style="float:right" title="Add to this note\'s related links">+ Link</button><span class="sub-line">' + Math.round(x.score * 100) + "% similar" + (x.section ? " · " + esc(x.section) : "") + "</span></span></li>").join("") + "</ul></section>" : "") +
@@ -804,7 +806,7 @@ const views = {
         catch (e) { toast(e.message, true); b.disabled = false; }
       };
     }).catch(() => {});
-    view.querySelectorAll("[data-jump]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); jumpTo(a.dataset.jump); }));
+    view.querySelectorAll("[data-toc]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); goToHeading(n, toc[+a.dataset.toc]); }));
     const sim = $("#similar");
     if (sim) sim.onclick = async (ev) => {
       const b = ev.target.closest("[data-link]"); if (!b) return;
@@ -913,8 +915,8 @@ function sourceOutline(content) {
   for (; i < lines.length; i++) {
     const f = lines[i].match(/^\s*(`{3,}|~{3,})/);
     if (f) { if (!fence) fence = f[1][0]; else if (f[1][0] === fence) fence = null; continue; }
-    const m = !fence && lines[i].match(/^#{1,6}\s+(.*?)(?:\s+#+)?\s*$/);
-    if (m) headings.push({ text: m[1].toLowerCase(), line: i });
+    const m = !fence && lines[i].match(/^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/);
+    if (m) headings.push({ level: m[1].length, raw: m[2], text: m[2].toLowerCase(), line: i });
   }
   return { start, end: lines.length, headings };
 }
@@ -982,6 +984,24 @@ function restoreLine(n, line) {
     const y = lerp(readAnchors(n), "line", "y", line);
     scrollTo(0, y === null ? 0 : y - visibleTop(true));
   }
+}
+
+/** "On this page": scroll to a heading from sourceOutline, in Read or Edit mode. */
+function goToHeading(n, h) {
+  if (activeEditor?.view) {
+    // The text may have changed since the note loaded: find the heading nearest its old line.
+    const doc = activeEditor.view.state.doc;
+    let best = h.line, dist = Infinity;
+    for (let i = 1; i <= doc.lines; i++) {
+      const m = doc.line(i).text.match(/^#{1,6}\s+(.*?)(?:\s+#+)?\s*$/);
+      if (m && m[1] === h.raw && Math.abs(i - 1 - h.line) < dist) { best = i - 1; dist = Math.abs(i - 1 - h.line); }
+    }
+    restoreLine(n, best);
+    activeEditor.view.focus();
+    return;
+  }
+  const y = lerp(readAnchors(n), "line", "y", h.line);
+  if (y !== null) scrollTo({ top: y - visibleTop(true), behavior: "smooth" });
 }
 
 function jumpTo(heading) {
