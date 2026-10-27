@@ -27,7 +27,14 @@ describe("LinkResolver", () => {
     );
   });
 
-  it("returns null for missing notes and the source for same-note links", () => {
+  it("prefers the same-named note nearest the linking note", () => {
+    const q = new LinkResolver(["uni/A/exam/questions.md", "uni/B/exam/questions.md"]);
+    expect(q.resolve("questions", "uni/B/tutorials/tut-1.md")).toBe("uni/B/exam/questions.md");
+    expect(q.resolve("questions", "uni/A/notes/x.md")).toBe("uni/A/exam/questions.md");
+    expect(q.resolve("questions")).toBe("uni/A/exam/questions.md");
+  });
+
+    it("returns null for missing notes and the source for same-note links", () => {
     expect(r.resolve("Missing Note")).toBeNull();
     expect(r.resolve("", "people/Jane Doe.md")).toBe("people/Jane Doe.md");
   });

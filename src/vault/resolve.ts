@@ -3,7 +3,8 @@
  * 1. Exact vault-relative path (with or without `.md`).
  * 2. Path suffix match (`folder/Note` matches `a/folder/Note.md`).
  * 3. File name match, case-insensitive. If several notes share a name, the one
- *    with the shortest path wins (closest to the vault root), then alphabetical.
+ *    nearest the linking note wins (most shared folders), then the shortest path,
+ *    then alphabetical.
  */
 export class LinkResolver {
   private byPath = new Map<string, string>();
@@ -43,6 +44,18 @@ export class LinkResolver {
     if (key.includes("/")) {
       const suffix = candidates.find((c) => normalise(c).endsWith(`/${key}`));
       return suffix ?? null;
+    }
+    if (candidates.length > 1 && fromPath) {
+      // Same name in several folders: prefer the one closest to the linking note
+      // (most shared leading folders), like Obsidian does, then shortest path.
+      const from = normalise(fromPath).split("/").slice(0, -1);
+      const shared = (c: string) => {
+        const parts = normalise(c).split("/").slice(0, -1);
+        let n = 0;
+        while (n < parts.length && n < from.length && parts[n] === from[n]) n++;
+        return n;
+      };
+      return [...candidates].sort((a, b) => shared(b) - shared(a))[0]!;
     }
     return candidates[0]!;
   }
