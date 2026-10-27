@@ -576,7 +576,15 @@ claude mcp add brain --scope user -- npx -y shannote serve
   `[[links]]` and `[text](url)` show as links (Ctrl/Cmd-click to follow), frontmatter folds
   into a "Properties" chip. Vim mode is `@replit/codemirror-vim` in a compartment, toggled
   per browser (`:w` saves, `:q` / `:wq` return to reading). Read/Edit mode is remembered;
-  `e` toggles it.
+  `e` toggles it, and switching keeps the reading position (both views are mapped onto
+  source lines via headings). The Read/Edit bar sticks under the top bar while scrolling.
+- **Slash commands** (`src/web/editor/slash.ts`, `@codemirror/autocomplete`): `/` at the
+  start of a line or after a space opens a menu: page, toggle, bullet, numbered, todo,
+  h1–h3, text, quote, callout, code, divider. Everything inserted is plain Obsidian
+  markdown; a toggle is a folded callout (`> [!toggle]- Title`). `/page Title` (or
+  `/note Title`) inserts `[[Title]]` and creates the note through the normal
+  `POST /api/note/create` (so it's stamped and committed), in the current note's folder, or
+  `notes/` when writing in `daily/` or `inbox/`. If the note exists it's just linked.
 - **Saving**: `Brain.save` replaces the whole file, guarded by the hash the editor loaded
   (409 with the current text and hash on mismatch; the UI offers "Load their version" /
   "Keep mine", which re-saves with `force`). Saves are debounced ~1s in the browser; the

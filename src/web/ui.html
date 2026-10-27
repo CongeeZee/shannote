@@ -182,7 +182,7 @@ code { font-family: var(--mono); }
 /* prose (rendered notes) */
 .prose { font-family: var(--serif); font-size: 16.5px; line-height: 1.75; overflow-wrap: anywhere; color: var(--text); }
 .prose > :first-child { margin-top: 0; }
-.prose h1, .prose h2, .prose h3, .prose h4 { font-family: var(--display); font-weight: 560; letter-spacing: -.01em; line-height: 1.3; margin: 1.7em 0 .5em; scroll-margin-top: 90px; }
+.prose h1, .prose h2, .prose h3, .prose h4 { font-family: var(--display); font-weight: 560; letter-spacing: -.01em; line-height: 1.3; margin: 1.7em 0 .5em; scroll-margin-top: calc(var(--topbar-h, 64px) + 64px); }
 .prose h1 { font-size: 1.6em; } .prose h2 { font-size: 1.32em; } .prose h3 { font-size: 1.12em; } .prose h4 { font-size: 1em; }
 .prose h2::after { content: ""; display: block; width: 38px; height: 2px; margin-top: 8px; border-radius: 2px; background: var(--accent); opacity: .45; }
 .prose p, .prose ul, .prose ol, .prose pre, .prose table, .prose blockquote { margin: .75em 0; }
@@ -230,6 +230,9 @@ details.callout[open] > .callout-title::after { transform: rotate(90deg); }
 .crumbs { font-size: 13px; color: var(--faint); margin-bottom: 8px; overflow-wrap: anywhere; font-weight: 600; }
 .note-head h1 { font-family: var(--display); font-size: 38px; font-weight: 520; letter-spacing: -.02em; margin: 0 0 12px; line-height: 1.15; }
 .note-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.note-head:has(+ .note-actions) { margin-bottom: 12px; }
+/* Stays under the top bar while you scroll, so Read/Edit is always in reach. */
+.note-actions { position: sticky; top: var(--topbar-h, 64px); z-index: 4; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 0; margin: -8px 0 12px; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(10px) saturate(1.1); }
 .note-summary { font-family: var(--serif); font-style: italic; color: var(--muted); font-size: 17px; line-height: 1.6; margin: 0 0 18px; }
 .note-body { padding: 26px 32px; }
 .aside { position: sticky; top: 84px; display: grid; gap: 16px; max-height: calc(100vh - 104px); overflow-y: auto; padding-bottom: 8px; }
@@ -332,7 +335,7 @@ body.guest .owner-only { display: none !important; }
       <a href="#/search" data-r="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>Search</a>
       <a href="#/inbox" data-r="inbox" class="owner-only"><svg viewBox="0 0 24 24"><path d="M3.5 13.5 6 5.5h12l2.5 8"/><path d="M3.5 13.5V18a1.5 1.5 0 0 0 1.5 1.5h14a1.5 1.5 0 0 0 1.5-1.5v-4.5H15a3 3 0 0 1-6 0Z"/></svg>Inbox<span class="count" id="c-inbox"></span></a>
       <a href="#/tasks" data-r="tasks" class="owner-only"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m8 12.2 2.8 2.8L16.5 9"/></svg>Tasks<span class="count" id="c-tasks"></span></a>
-      <a href="#/notes" data-r="notes"><svg viewBox="0 0 24 24"><path d="M6 3.5h8.5L19 8v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1-1.5Z"/><path d="M14 3.5V8h5M8.5 12.5h7M8.5 16h5"/></svg>Notes<span class="count" id="c-notes"></span></a>
+      <a href="#/notes" data-r="notes"><svg viewBox="0 0 24 24"><path d="M6 3.5h8.5L19 8v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1-1.5Z"/><path d="M14 3.5V8h5M8.5 12.5h7M8.5 16h5"/></svg>Notes</a>
       <a href="#/handoffs" data-r="handoffs" class="owner-only"><svg viewBox="0 0 24 24"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></svg>Handoffs</a>
       <a href="#/health" data-r="health" class="owner-only"><svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 7.3 4.3 4.3 0 0 1 19.5 10c0 5.6-7.5 10-7.5 10Z"/></svg>Health<span class="count" id="c-health"></span></a>
     </nav>
@@ -376,6 +379,9 @@ async function api(path, body) {
 
 /** Who's using the app: the owner, or a guest with a link to one shared space. */
 let me = { role: "owner", spaces: [] };
+const syncTopbarH = () => document.documentElement.style.setProperty("--topbar-h", $(".topbar").offsetHeight + "px");
+syncTopbarH();
+new ResizeObserver(syncTopbarH).observe($(".topbar"));
 const isGuest = () => me.role === "guest";
 const prefs = {
   get(k, d) { try { return localStorage.getItem("shannote-" + k) ?? d; } catch { return d; } },
@@ -471,8 +477,15 @@ function mountEditor(card, n) {
       timer = setTimeout(() => save(), 900);
     },
     onSave: () => save(),
-    onQuit: () => { prefs.set("mode", "read"); route(); },
+    onQuit: () => switchMode("read"),
     onOpenLink: (t) => openLink(t),
+    // "/page Title": the new note goes next to this one (daily notes and the inbox send it to notes/).
+    async onCreateNote(title) {
+      const dir = n.path.includes("/") ? n.path.slice(0, n.path.lastIndexOf("/")) : "";
+      const folder = /^(daily|inbox)(\/|$)/.test(dir) ? "" : dir;
+      try { await api("note/create", { title, folder }); toast("Created “" + title + "”"); }
+      catch (e) { e.status === 409 ? toast("Linked to the existing “" + title + "”") : toast("Couldn't create the note: " + e.message, true); }
+    },
   });
   bar.querySelector(".vim-t").onchange = (e) => { prefs.set("vim", e.target.checked ? "1" : "0"); ed.setVim(e.target.checked); };
 
@@ -492,6 +505,7 @@ function mountEditor(card, n) {
   setTimeout(() => ed.focus(), 0);
   return {
     path: n.path,
+    view: ed.view,
     dirty,
     flush: async () => { if (dirty() && !banner) await save(); },
     /** Last-chance save when the window closes. */
@@ -742,6 +756,7 @@ const views = {
 
   async note(params, path) {
     const n = await api("note?path=" + enc(path));
+    shownNote = n;
     const editing = !me.readOnly && (params.get("edit") === "1" || prefs.get("mode", "read") === "edit");
     const fm = n.frontmatter || {};
     const tags = Array.isArray(fm.tags) ? fm.tags : typeof fm.tags === "string" ? fm.tags.split(/[,\s]+/) : [];
@@ -750,13 +765,15 @@ const views = {
     const linkList = (title, items, empty) => '<section class="card"><div class="card-h">' + title + ' <span class="n">' + items.length + "</span></div>" +
       (items.length ? '<ul class="linklist">' + items.map((i) => '<li><a href="' + noteHref(i.path) + '">' + esc(i.title) + "</a></li>").join("") + "</ul>" : '<div class="empty">' + empty + "</div>") + "</section>";
     const toc = n.headings.filter((h) => /^#{2,4} /.test(h));
+    const pillRow = (html) => html ? '<div class="note-meta">' + html + "</div>" : "";
     view.innerHTML =
       '<div class="note-layout"><article><div class="note-head"><div class="crumbs">' + (crumbs || "&nbsp;") + "</div><h1>" + esc(n.title) + "</h1>" +
-        '<div class="note-meta">' + tags.filter(Boolean).map((t) => '<a class="pill accent" href="#/search?tag=' + enc(t) + '&q=' + enc(t) + '">#' + esc(t) + "</a>").join("") +
+        pillRow(tags.filter(Boolean).map((t) => '<a class="pill accent" href="#/search?tag=' + enc(t) + '&q=' + enc(t) + '">#' + esc(t) + "</a>").join("") +
         (fm.status ? '<span class="pill">' + esc(fm.status) + "</span>" : "") +
-        (fm.updated_by ? '<span class="pill" title="' + esc(fm.updated) + '">edited by ' + esc(fm.updated_by) + "</span>" : "") +
+        (fm.updated_by ? '<span class="pill" title="' + esc(fm.updated) + '">edited by ' + esc(fm.updated_by) + "</span>" : "")) + "</div>" +
+        (me.readOnly && isGuest() ? "" : '<div class="note-actions">' +
         (me.readOnly ? "" : '<div class="seg" id="mode-seg" title="Press e to switch"><a href="#" data-m="read" class="' + (editing ? "" : "on") + '">Read</a><a href="#" data-m="edit" class="' + (editing ? "on" : "") + '">Edit</a></div>') +
-        '<span class="owner-only"><a class="btn sm ghost" href="' + obsidian + '">Open in Obsidian</a><button class="btn sm ghost" id="copy-path">Copy path</button></span></div></div>' +
+        '<span class="owner-only"><a class="btn sm ghost" href="' + obsidian + '">Open in Obsidian</a><button class="btn sm ghost" id="copy-path">Copy path</button></span></div>') +
         (fm.summary && !editing ? '<p class="note-summary">' + esc(fm.summary) + "</p>" : "") +
         '<div class="card" id="note-card"><div class="note-body prose">' + (n.html.trim() || '<p class="faint">Empty note. Switch to Edit to write something.</p>') + "</div></div></article>" +
       '<aside class="aside owner-only">' +
@@ -766,10 +783,11 @@ const views = {
         (n.related.similar && n.related.similar.length ? '<section class="card" id="similar"><div class="card-h">Similar, not linked <span class="n">' + n.related.similar.length + '</span></div><ul class="linklist">' + n.related.similar.map((x) => '<li><span><a href="' + noteHref(x.path) + '" style="padding:0;display:inline">' + esc(x.title) + '</a> <button class="btn sm ghost" data-link="' + esc(x.path) + '" style="float:right" title="Add to this note\'s related links">+ Link</button><span class="sub-line">' + Math.round(x.score * 100) + "% similar" + (x.section ? " · " + esc(x.section) : "") + "</span></span></li>").join("") + "</ul></section>" : "") +
         (n.related.unresolved.length ? '<section class="card"><div class="card-h">Missing notes <span class="n">' + n.related.unresolved.length + '</span></div><ul class="linklist">' + n.related.unresolved.map((u) => '<li><span class="wikilink missing">' + esc(u) + "</span></li>").join("") + "</ul></section>" : "") +
       "</aside></div>";
-    $("#copy-path").onclick = () => navigator.clipboard.writeText(n.absPath).then(() => toast("Path copied"));
+    const copyPath = $("#copy-path");
+    if (copyPath) copyPath.onclick = () => navigator.clipboard.writeText(n.absPath).then(() => toast("Path copied"));
     if (isGuest()) $(".note-layout").style.gridTemplateColumns = "minmax(0, 1fr)";
     const seg = $("#mode-seg");
-    if (seg) seg.onclick = (e) => { const a = e.target.closest("[data-m]"); if (!a) return; e.preventDefault(); prefs.set("mode", a.dataset.m); route(); };
+    if (seg) seg.onclick = (e) => { const a = e.target.closest("[data-m]"); if (!a) return; e.preventDefault(); switchMode(a.dataset.m); };
     if (editing) activeEditor = mountEditor($("#note-card"), n);
     if (!isGuest()) api("links?note=" + enc(n.path)).then((ls) => {
       const s = ls[0];
@@ -795,7 +813,9 @@ const views = {
       catch (e) { toast(e.message, true); b.disabled = false; }
     };
     const h = params.get("h");
-    if (h) jumpTo(h); else window.scrollTo(0, 0);
+    const place = keepPlace && keepPlace.path === n.path ? keepPlace.line : null;
+    keepPlace = null;
+    if (place !== null) restoreLine(n, place); else if (h) jumpTo(h); else window.scrollTo(0, 0);
   },
 
   async inbox() {
@@ -868,6 +888,101 @@ const views = {
     $("#sync-btn-2").onclick = () => doSync($("#sync-btn-2"));
   },
 };
+
+// ------------------------------------------------- keeping your place across Read/Edit
+// Both modes are mapped onto source lines: the editor knows where every line is, the
+// rendered note only where its headings are, so positions in between are interpolated.
+let shownNote = null, keepPlace = null;
+
+function switchMode(m) {
+  const line = shownNote ? currentLine(shownNote) : null;
+  keepPlace = line === null ? null : { path: shownNote.path, line };
+  prefs.set("mode", m);
+  route();
+}
+
+/** Line after the frontmatter and the title, and the headings below it (skipping code). */
+function sourceOutline(content) {
+  const lines = content.split("\n");
+  let i = 0;
+  if (lines[0] === "---") { const end = lines.indexOf("---", 1); if (end > 0) i = end + 1; }
+  while (i < lines.length && !lines[i].trim()) i++;
+  if (/^# /.test(lines[i] || "")) i++;
+  const start = i, headings = [];
+  let fence = null;
+  for (; i < lines.length; i++) {
+    const f = lines[i].match(/^\s*(`{3,}|~{3,})/);
+    if (f) { if (!fence) fence = f[1][0]; else if (f[1][0] === fence) fence = null; continue; }
+    const m = !fence && lines[i].match(/^#{1,6}\s+(.*?)(?:\s+#+)?\s*$/);
+    if (m) headings.push({ text: m[1].toLowerCase(), line: i });
+  }
+  return { start, end: lines.length, headings };
+}
+
+/** Points tying page positions (y) in the rendered note to source lines. */
+function readAnchors(n) {
+  const body = $(".note-body");
+  if (!body) return [];
+  const y = (el) => el.getBoundingClientRect().top + scrollY;
+  const { start, end, headings } = sourceOutline(n.content);
+  const els = [...body.querySelectorAll("[data-heading]")];
+  const pts = [{ y: y(body), line: start }];
+  let j = 0;
+  for (const h of headings) {
+    const k = els.findIndex((el, idx) => idx >= j && el.dataset.heading.toLowerCase() === h.text);
+    if (k < 0) continue;
+    j = k + 1;
+    pts.push({ y: y(els[k]), line: h.line });
+  }
+  pts.push({ y: y(body) + body.offsetHeight, line: end });
+  return pts;
+}
+
+function lerp(pts, from, to, v) {
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    if (v > b[from] && i < pts.length - 1) continue;
+    const span = b[from] - a[from];
+    return a[to] + (span > 0 ? Math.min(1, Math.max(0, (v - a[from]) / span)) : 0) * (b[to] - a[to]);
+  }
+  return null;
+}
+
+/** Bottom of the sticky bars, in viewport pixels: where the visible note starts. */
+function visibleTop(stuck) {
+  const bar = $(".note-actions");
+  if (!bar) return $(".topbar")?.offsetHeight || 0;
+  return stuck ? (parseFloat(getComputedStyle(bar).top) || 0) + bar.offsetHeight : bar.getBoundingClientRect().bottom;
+}
+
+/** Source line (fractional) at the top of the visible note, or null if the note's start is in view. */
+function currentLine(n) {
+  const top = visibleTop(false);
+  if (activeEditor?.view) {
+    const v = activeEditor.view, h = top - v.documentTop;
+    if (h <= 0) return null;
+    const b = v.lineBlockAtHeight(h);
+    return v.state.doc.lineAt(b.from).number - 1 + Math.min(1, Math.max(0, (h - b.top) / (b.height || 1)));
+  }
+  const pts = readAnchors(n);
+  if (!pts.length || top + scrollY <= pts[0].y) return null;
+  return lerp(pts, "y", "line", top + scrollY);
+}
+
+function restoreLine(n, line) {
+  if (activeEditor?.view) {
+    const v = activeEditor.view, doc = v.state.doc;
+    const ln = doc.line(Math.min(doc.lines, Math.floor(line) + 1));
+    v.dispatch({ selection: { anchor: ln.from } });
+    // Heights of far-off lines are estimates until they're drawn, so settle once more after.
+    const go = () => { const b = v.lineBlockAt(ln.from); scrollTo(0, v.documentTop + scrollY + b.top + (line % 1) * b.height - visibleTop(true)); };
+    go();
+    requestAnimationFrame(() => requestAnimationFrame(go));
+  } else {
+    const y = lerp(readAnchors(n), "line", "y", line);
+    scrollTo(0, y === null ? 0 : y - visibleTop(true));
+  }
+}
 
 function jumpTo(heading) {
   const target = [...view.querySelectorAll(".prose [data-heading]")].find((el) => el.dataset.heading.toLowerCase() === heading.toLowerCase());
@@ -951,7 +1066,7 @@ document.addEventListener("keydown", (e) => {
   if (e.target.closest && e.target.closest(".cm-editor")) return;
   if (e.target.matches("input, textarea, select") || e.target.isContentEditable) { if (e.key === "Escape") e.target.blur(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key === "e" && $("#mode-seg")) { e.preventDefault(); prefs.set("mode", prefs.get("mode", "read") === "edit" ? "read" : "edit"); route(); return; }
+  if (e.key === "e" && $("#mode-seg")) { e.preventDefault(); switchMode(prefs.get("mode", "read") === "edit" ? "read" : "edit"); return; }
   if (e.key === "/") { e.preventDefault(); location.hash = "#/search"; }
   else if (e.key === "c" && !isGuest()) { e.preventDefault(); $("#capture").focus(); }
   else if (e.key === "t" && !isGuest()) location.hash = "#/today";
@@ -960,7 +1075,6 @@ document.addEventListener("keydown", (e) => {
 async function refreshCounts() {
   try {
     const s = await api("status");
-    $("#c-notes").textContent = s.notes;
     $("#c-inbox").textContent = s.inbox || "";
     const ct = $("#c-tasks"); ct.textContent = s.tasks.open;
     const td = $("#c-today"); td.textContent = s.tasks.overdue ? s.tasks.overdue + " overdue" : s.tasks.dueToday || ""; td.classList.toggle("alert", s.tasks.overdue > 0);

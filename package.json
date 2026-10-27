@@ -20,6 +20,7 @@
     "build:editor": "esbuild src/web/editor/editor.ts --bundle --minify --format=iife --target=es2022 --outfile=dist/editor.js"
   },
   "devDependencies": {
+    "@codemirror/autocomplete": "^6.20.4",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language": "^6.13.1",

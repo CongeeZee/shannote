@@ -22,6 +22,7 @@ import {
 } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
+import { slashCommands } from "./slash";
 
 export interface EditorOptions {
   doc: string;
@@ -32,6 +33,8 @@ export interface EditorOptions {
   onQuit?: () => void;
   onOpenLink?: (target: string) => void;
   onVimMode?: (mode: string) => void;
+  /** "/page Title" inserted a [[Title]] link; create that note. */
+  onCreateNote?: (title: string) => void;
 }
 
 // ------------------------------------------------------------------ live preview
@@ -384,8 +387,9 @@ export function create(parent: HTMLElement, opts: EditorOptions) {
     livePreview,
     frontmatterFold,
     tagPlugin,
+    slashCommands((title) => opts.onCreateNote?.(title)),
     theme,
-    placeholder("Start writing… (markdown works: # heading, **bold**, - [ ] task, [[link]])"),
+    placeholder("Start writing… (type / for commands; markdown works: # heading, **bold**, - [ ] task, [[link]])"),
     roSlot.of([EditorState.readOnly.of(!!opts.readOnly), EditorView.editable.of(!opts.readOnly)]),
     keymap.of([
       { key: "Mod-s", preventDefault: true, run: () => (opts.onSave?.(), true) },
