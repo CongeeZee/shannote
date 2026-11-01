@@ -290,3 +290,82 @@ describe("always-on server", () => {
     expect(p).not.toContain("KeepAlive");
   });
 });
+
+describe("Cloudflare tunnel", () => {
+  let home: string, prevHome: string | undefined;
+  beforeEach(() => { prevHome = process.env.HOME; home = mkdtempSync(join(tmpdir(), "cf-home-")); process.env.HOME = home; });
+  afterEach(() => { process.env.HOME = prevHome; rmSync(home, { recursive: true, force: true }); });
+
+  // A stand-in for the cloudflared CLI that records what it was asked to do.
+  const fakeCloudflared = (o: { dns?: "ok" | "exists" | "fail" } = {}) => {
+    const calls: string[][] = [];
+    let created = false;
+    const run = (cmd: string, args: string[]) => {
+      calls.push([cmd, ...args]);
+      if (cmd === "sh") return "/opt/homebrew/bin/cloudflared\n";
+      if (args[0] === "--version") return "cloudflared version 2026.10.0";
+      if (args[1] === "list") return JSON.stringify(created ? [{ id: "abc-123", name: "shannote" }] : []);
+      if (args[1] === "create") { created = true; writeFileSync(join(home, ".cloudflared", "abc-123.json"), "{}"); return "Created tunnel shannote with id abc-123"; }
+      if (args[1] === "route") {
+        if (o.dns === "exists") throw Object.assign(new Error("failed"), { stderr: "Failed to add route: code: 1003, reason: An A, AAAA, or CNAME record with that host already exists." });
+        if (o.dns === "fail") throw Object.assign(new Error("failed"), { stderr: "Failed to add route: authentication error" });
+        return "Added CNAME";
+      }
+      return "";
+    };
+    return { run, calls };
+  };
+  const signIn = async () => { const { mkdirSync } = await import("node:fs"); mkdirSync(join(home, ".cloudflared"), { recursive: true }); writeFileSync(join(home, ".cloudflared", "cert.pem"), "x"); };
+  const opts = (run: (c: string, a: string[]) => string) => ({ hostname: "shannote.example.dev", port: 4567, node: "/usr/bin/node", config: join(home, "cfg", "cloudflared.yml"), log: join(home, "tunnel.log"), run, install: false });
+
+  it("only ever publishes a subdomain, never the main site", async () => {
+    const { setupCloudflare, isSubdomain } = await import("../src/agent/service.js");
+    expect(isSubdomain("shannote.example.dev")).toBe(true);
+    for (const bad of ["example.dev", "dev", "-x.example.dev", "shannote.example.dev.", "a b.example.dev"]) expect(isSubdomain(bad)).toBe(false);
+    const f = fakeCloudflared();
+    const r = setupCloudflare({ ...opts(f.run), hostname: "example.dev" });
+    expect(r.ok).toBe(false);
+    expect(f.calls).toEqual([]); // stopped before touching anything
+  });
+
+  it("says what to do when cloudflared is missing or not signed in", async () => {
+    const { setupCloudflare } = await import("../src/agent/service.js");
+    const missing = setupCloudflare(opts(() => { throw new Error("ENOENT"); }));
+    expect(missing).toMatchObject({ ok: false, problem: expect.stringContaining("brew install cloudflared") });
+    const out = setupCloudflare(opts(fakeCloudflared().run));
+    expect(out).toMatchObject({ ok: false, problem: expect.stringContaining("cloudflared tunnel login") });
+  });
+
+  it("creates the tunnel, adds one DNS record without overwriting, and routes only that host", async () => {
+    const { setupCloudflare } = await import("../src/agent/service.js");
+    await signIn();
+    const f = fakeCloudflared();
+    const r = setupCloudflare(opts(f.run));
+    expect(r.ok).toBe(true);
+    const route = f.calls.find((c) => c[2] === "route")!;
+    expect(route).toEqual(["cloudflared", "tunnel", "route", "dns", "abc-123", "shannote.example.dev"]);
+    expect(f.calls.flat()).not.toContain("--overwrite-dns");
+    const { readFileSync } = await import("node:fs");
+    const cfg = readFileSync(join(home, "cfg", "cloudflared.yml"), "utf8");
+    expect(cfg).toContain("tunnel: abc-123");
+    expect(cfg).toContain("- hostname: shannote.example.dev\n    service: http://127.0.0.1:4567");
+    expect(cfg).toContain("- service: http_status:404"); // anything else gets nothing
+  });
+
+  it("leaves an existing DNS record alone, and stops on other DNS errors", async () => {
+    const { setupCloudflare } = await import("../src/agent/service.js");
+    await signIn();
+    const exists = setupCloudflare(opts(fakeCloudflared({ dns: "exists" }).run));
+    expect(exists.ok && exists.notes.some((n) => n.includes("already has a DNS record"))).toBe(true);
+    const fail = setupCloudflare(opts(fakeCloudflared({ dns: "fail" }).run));
+    expect(fail).toMatchObject({ ok: false, problem: expect.stringContaining("authentication error") });
+  });
+
+  it("runs the tunnel as a kept-alive service", async () => {
+    const { tunnelPlist, tunnelUnit } = await import("../src/agent/service.js");
+    const o = { cloudflared: "/opt/homebrew/bin/cloudflared", config: "/Users/x/.config/shannote/cloudflared.yml", log: "/tmp/t.log", node: "/opt/homebrew/bin/node" };
+    expect(tunnelPlist(o)).toContain("<key>KeepAlive</key><true/>");
+    expect(tunnelPlist(o)).toContain("<string>--config</string>");
+    expect(tunnelUnit(o)).toContain("ExecStart=/opt/homebrew/bin/cloudflared tunnel --no-autoupdate --config /Users/x/.config/shannote/cloudflared.yml run");
+  });
+});

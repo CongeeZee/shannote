@@ -26,6 +26,8 @@ Usage:
             [--remote]                  …only through a proxy like \`tailscale serve\` (token required)
   brain server install [--port 4567]    Run Shannote all the time on this computer (launchd on macOS,
                                         systemd on Linux) and publish it on Tailscale over HTTPS
+            [--cloudflare <subdomain>]  …or at your own subdomain through a Cloudflare Tunnel (no app on
+                                        the phone; put Cloudflare Access in front, see docs/SERVER.md)
   brain server status | remove          Is the always-on server running? / take it down
   brain app [--port 4567]               Open the web app in its own window (starts it if needed)
   brain app install | uninstall | stop  Add/remove Shannote in your applications menu
@@ -71,6 +73,7 @@ const { values, positionals } = parseArgs({
     open: { type: "boolean", default: false },
     lan: { type: "boolean", default: false },
     remote: { type: "boolean", default: false },
+    cloudflare: { type: "string" },
     "new-token": { type: "boolean", default: false },
     path: { type: "string" },
     client: { type: "string" },
@@ -520,6 +523,28 @@ ${process.platform === "linux" ? "Or, with" : "With"} cron (\`crontab -e\`; miss
         const token = await webToken(values["new-token"]);
         const where = svc.installServer({ node: process.execPath, cli: process.argv[1]!, vault, log, port });
         console.log(`Shannote now runs all the time on this computer: ${where}\nVault: ${vault} · log: ${log}`);
+        if (values.cloudflare) {
+          const { configDir } = await import("./config.js");
+          const host = values.cloudflare.toLowerCase();
+          const r = svc.setupCloudflare({ hostname: host, port, node: process.execPath, config: join(configDir(), "cloudflared.yml"), log: join(cacheRoot(), "tunnel.log") });
+          if (!r.ok) {
+            console.log(`\nThe Cloudflare tunnel isn't set up yet:\n${r.problem}\nThen run \`shannote server install --cloudflare ${host}\` again.`);
+            return 1;
+          }
+          for (const n of r.notes) console.log(`- ${n}`);
+          console.log(`
+Now put a login in front of it (once), at https://one.dash.cloudflare.com:
+  Access → Applications → Add an application → Self-hosted
+  Domain: ${host}   Policy: Allow, Include → Emails → your email address
+  (Sign-in can be a one-time code sent to your email, or Google.)
+Until then, only the token below protects it.
+
+On your phone, open once:
+  https://${host}/?token=${token}
+Sign in to Cloudflare when asked, then Chrome menu → "Add to Home Screen". No app needed.
+The link is a password; \`shannote server install --cloudflare ${host} --new-token\` replaces it.`);
+          return 0;
+        }
         const ts = svc.tailscaleName();
         if (!ts.name) {
           console.log(`\nNot on Tailscale yet: ${ts.problem}\nOnce it is, run \`shannote server install\` again to get your phone link.`);
@@ -536,12 +561,14 @@ ${process.platform === "linux" ? "Or, with" : "With"} cron (\`crontab -e\`; miss
       }
       if (sub === "remove") {
         const removed = svc.removeServer();
-        console.log(removed ? "Stopped and removed the always-on server. (`tailscale serve reset` stops publishing it.)" : "The always-on server wasn't installed.");
+        console.log(removed ? "Stopped and removed the always-on server and its tunnel service. (`tailscale serve reset` stops publishing on Tailscale; `cloudflared tunnel delete shannote` removes the Cloudflare tunnel, and the subdomain's DNS record can be deleted in Cloudflare.)" : "The always-on server wasn't installed.");
         return 0;
       }
-      const st = svc.serverStatus();
+      const st = svc.serverStatus(), tun = svc.tunnelStatus();
       const ts = svc.tailscaleName();
-      console.log(`Always-on server: ${st.installed ? (st.running ? "running" : "installed but not running") : "not installed (`shannote server install`)"}`);
+      const state = (x: { installed: boolean; running: boolean }) => (x.running ? "running" : "installed but not running");
+      console.log(`Always-on server: ${st.installed ? state(st) : "not installed (`shannote server install`)"}`);
+      if (tun.installed) console.log(`Cloudflare tunnel: ${state(tun)} (log: ${join(cacheRoot(), "tunnel.log")})`);
       console.log(`Tailscale: ${ts.name ? `https://${ts.name}` : ts.problem}`);
       return 0;
     }

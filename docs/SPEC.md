@@ -739,5 +739,13 @@ claude mcp add brain --scope user -- npx -y shannote serve
 - **Briefs on macOS**: `brain schedule install` writes a LaunchAgent with
   `StartCalendarInterval` (launchd runs a missed time once the Mac wakes; `--if-missing`
   keeps that from doubling up). Run briefs on one machine only.
+- **Cloudflare Tunnel** (`server install --cloudflare <subdomain>`, `setupCloudflare`): for a
+  phone with nothing installed. Reuses or creates the tunnel `shannote`, runs
+  `cloudflared tunnel route dns` (never `--overwrite-dns`; an existing record is left alone),
+  writes an ingress config that sends only that hostname to 127.0.0.1 (anything else gets a
+  404), and runs `cloudflared tunnel run` as a LaunchAgent or systemd service. It refuses
+  anything that isn't a subdomain, so the domain's main site can't be touched. The login is
+  Cloudflare Access (configured in the dashboard); Shannote's token is still required behind
+  it, since tunnelled requests carry `Cf-Connecting-Ip`/`X-Forwarded-For`.
 - Several machines on one vault is the existing git design (§5): the server is just another
   device that's always on.

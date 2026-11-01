@@ -15,6 +15,9 @@ export interface ServerOptions { node: string; cli: string; vault: string; log: 
 export const unitDir = () => join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "systemd", "user");
 const SERVER_LABEL = "com.shannote.server";
 const SERVER_UNIT = "shannote-server";
+const TUNNEL_LABEL = "com.shannote.tunnel";
+const TUNNEL_UNIT = "shannote-tunnel";
+const TUNNEL_NAME = "shannote";
 
 // ------------------------------------------------------------------ launchd (macOS)
 
@@ -126,6 +129,7 @@ export function installServer(o: ServerOptions): string {
 }
 
 export function removeServer(): boolean {
+  removeTunnelService();
   if (process.platform === "darwin") return launchdRemove(SERVER_LABEL);
   const unit = join(unitDir(), `${SERVER_UNIT}.service`);
   if (process.platform !== "linux" || !existsSync(unit)) return false;
@@ -135,16 +139,18 @@ export function removeServer(): boolean {
   return true;
 }
 
-export function serverStatus(): { installed: boolean; running: boolean } {
-  if (process.platform === "darwin") return { installed: existsSync(plistPath(SERVER_LABEL)), running: launchdRunning(SERVER_LABEL) };
+function serviceState(label: string, unit: string): { installed: boolean; running: boolean } {
+  if (process.platform === "darwin") return { installed: existsSync(plistPath(label)), running: launchdRunning(label) };
   if (process.platform === "linux") {
-    const installed = existsSync(join(unitDir(), `${SERVER_UNIT}.service`));
+    const installed = existsSync(join(unitDir(), `${unit}.service`));
     let running = false;
-    try { running = systemctl("is-active", `${SERVER_UNIT}.service`).trim() === "active"; } catch { /* inactive */ }
+    try { running = systemctl("is-active", `${unit}.service`).trim() === "active"; } catch { /* inactive */ }
     return { installed, running };
   }
   return { installed: false, running: false };
 }
+export const serverStatus = () => serviceState(SERVER_LABEL, SERVER_UNIT);
+export const tunnelStatus = () => serviceState(TUNNEL_LABEL, TUNNEL_UNIT);
 
 // ------------------------------------------------------------------ Tailscale
 
@@ -170,4 +176,118 @@ export function tailscaleServe(port: number): { ok: boolean; message: string } {
     const err = String((e as { stderr?: string }).stderr || (e as Error).message).trim().split("\n").slice(0, 3).join(" ");
     return { ok: false, message: err };
   }
+}
+
+// ------------------------------------------------------------------ Cloudflare Tunnel
+
+/**
+ * Publishes the server at a subdomain you own (e.g. shannote.example.dev) through a Cloudflare
+ * Tunnel, so a phone needs nothing installed. Put Cloudflare Access (a login) in front of it in
+ * the dashboard; Shannote's token is still required behind that. Only a subdomain is accepted,
+ * and an existing DNS record is never overwritten, so the rest of the domain is left alone.
+ */
+export type Run = (cmd: string, args: string[]) => string;
+const defaultRun: Run = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 });
+const cloudflaredDir = () => join(homedir(), ".cloudflared");
+
+/** "shannote.example.dev" yes; "example.dev" (the site itself) or junk, no. */
+export function isSubdomain(host: string): boolean {
+  return /^(?!-)[a-z0-9-]{1,63}(\.(?!-)[a-z0-9-]{1,63}){2,}$/i.test(host) && !host.endsWith(".");
+}
+
+export function tunnelConfig(o: { tunnelId: string; credentials: string; hostname: string; port: number }): string {
+  return `# Written by \`shannote server install --cloudflare\`. Only this hostname reaches Shannote.
+tunnel: ${o.tunnelId}
+credentials-file: ${o.credentials}
+ingress:
+  - hostname: ${o.hostname}
+    service: http://127.0.0.1:${o.port}
+  - service: http_status:404
+`;
+}
+
+export function tunnelPlist(o: { cloudflared: string; config: string; log: string; node: string }): string {
+  return plist({ label: TUNNEL_LABEL, args: [o.cloudflared, "tunnel", "--no-autoupdate", "--config", o.config, "run"], log: o.log, path: servicePath(o.node), keepAlive: true });
+}
+
+export function tunnelUnit(o: { cloudflared: string; config: string; log: string; node: string }): string {
+  return `[Unit]
+Description=Cloudflare Tunnel for Shannote
+After=network-online.target
+
+[Service]
+ExecStart=${o.cloudflared} tunnel --no-autoupdate --config ${o.config} run
+Restart=always
+RestartSec=5
+Environment=PATH=${servicePath(o.node)}
+StandardOutput=append:${o.log}
+StandardError=append:${o.log}
+
+[Install]
+WantedBy=default.target
+`;
+}
+
+function removeTunnelService(): void {
+  if (process.platform === "darwin") { launchdRemove(TUNNEL_LABEL); return; }
+  const unit = join(unitDir(), `${TUNNEL_UNIT}.service`);
+  if (process.platform !== "linux" || !existsSync(unit)) return;
+  try { systemctl("disable", "--now", `${TUNNEL_UNIT}.service`); } catch { /* stopped */ }
+  rmSync(unit, { force: true });
+  try { systemctl("daemon-reload"); } catch { /* fine */ }
+}
+
+/**
+ * Creates (or reuses) the "shannote" tunnel, adds the subdomain's DNS record, writes the
+ * tunnel config and runs it as a service. Returns what it did, or the step you need to do first.
+ */
+export function setupCloudflare(o: { hostname: string; port: number; node: string; config: string; log: string; run?: Run; install?: boolean }):
+  { ok: true; notes: string[] } | { ok: false; problem: string } {
+  const run = o.run ?? defaultRun;
+  if (!isSubdomain(o.hostname)) return { ok: false, problem: `"${o.hostname}" isn't a subdomain. Use something like shannote.example.dev, so the main site at the domain is never touched.` };
+  let cloudflared: string;
+  try { run("cloudflared", ["--version"]); cloudflared = "cloudflared"; }
+  catch { return { ok: false, problem: "cloudflared isn't installed. On a Mac: brew install cloudflared" }; }
+  try { cloudflared = run("sh", ["-c", "command -v cloudflared"]).trim() || cloudflared; } catch { /* keep the bare name */ }
+  if (!existsSync(join(cloudflaredDir(), "cert.pem")))
+    return { ok: false, problem: `Sign cloudflared in to your Cloudflare account first (it opens a browser; choose ${o.hostname.split(".").slice(-2).join(".")}):\n  cloudflared tunnel login` };
+
+  const notes: string[] = [];
+  const list = () => JSON.parse(run("cloudflared", ["tunnel", "list", "--output", "json"]) || "[]") as { id: string; name: string }[];
+  let tunnel = list().find((t) => t.name === TUNNEL_NAME);
+  if (!tunnel) {
+    run("cloudflared", ["tunnel", "create", TUNNEL_NAME]);
+    tunnel = list().find((t) => t.name === TUNNEL_NAME);
+    if (!tunnel) return { ok: false, problem: "cloudflared created the tunnel but it isn't in `cloudflared tunnel list`." };
+    notes.push(`Created the Cloudflare tunnel "${TUNNEL_NAME}" (${tunnel.id}).`);
+  } else notes.push(`Using the existing Cloudflare tunnel "${TUNNEL_NAME}" (${tunnel.id}).`);
+  const credentials = join(cloudflaredDir(), `${tunnel.id}.json`);
+  if (!existsSync(credentials))
+    return { ok: false, problem: `The tunnel "${TUNNEL_NAME}" exists but its credentials aren't on this computer (it was made elsewhere). Delete it with \`cloudflared tunnel delete ${TUNNEL_NAME}\` and run this again.` };
+
+  try {
+    // No --overwrite-dns: if the name is already in use, stop rather than replace a record.
+    run("cloudflared", ["tunnel", "route", "dns", tunnel.id, o.hostname]);
+    notes.push(`Pointed ${o.hostname} at the tunnel (one new DNS record; nothing else in the domain changed).`);
+  } catch (e) {
+    const msg = String((e as { stderr?: string }).stderr || (e as Error).message);
+    if (!/already exists|already configured/i.test(msg)) return { ok: false, problem: `Couldn't add the DNS record for ${o.hostname}: ${msg.trim().split("\n")[0]}` };
+    notes.push(`${o.hostname} already has a DNS record; left it as it is. (If it doesn't point to this tunnel, remove it in Cloudflare DNS and run this again.)`);
+  }
+
+  mkdirSync(dirname(o.config), { recursive: true });
+  writeFileSync(o.config, tunnelConfig({ tunnelId: tunnel.id, credentials, hostname: o.hostname, port: o.port }));
+  if (o.install !== false) {
+    const svc = { cloudflared, config: o.config, log: o.log, node: o.node };
+    if (process.platform === "darwin") launchdInstall(TUNNEL_LABEL, tunnelPlist(svc));
+    else if (process.platform === "linux") {
+      mkdirSync(unitDir(), { recursive: true });
+      writeFileSync(join(unitDir(), `${TUNNEL_UNIT}.service`), tunnelUnit(svc));
+      systemctl("daemon-reload");
+      systemctl("enable", "--now", `${TUNNEL_UNIT}.service`);
+      systemctl("restart", `${TUNNEL_UNIT}.service`);
+    } else return { ok: false, problem: "Running the tunnel as a service is set up for macOS and Linux only." };
+    notes.push("The tunnel runs in the background and restarts on its own.");
+  }
+  return { ok: true, notes };
 }

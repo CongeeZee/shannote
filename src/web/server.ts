@@ -121,9 +121,9 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
       const q = url.searchParams;
-      // Traffic relayed by `tailscale serve` (or any proxy) arrives on loopback too, so a proxy's
+      // Traffic relayed by `tailscale serve`, a Cloudflare Tunnel or any proxy arrives on loopback too, so a proxy's
       // headers mark it as another device: it needs the token, whatever Host header it carries.
-      const proxied = !!(req.headers["tailscale-user-login"] || req.headers["x-forwarded-for"]);
+      const proxied = !!(req.headers["tailscale-user-login"] || req.headers["x-forwarded-for"] || req.headers["cf-connecting-ip"]);
       const local = isLoopback(req) && allowedHosts.has(req.headers.host ?? "") && !proxied;
       let guest: Guest | undefined;
       if (!local) {

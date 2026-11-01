@@ -7,10 +7,19 @@ laptops keep each other up to date through the vault's private GitHub repo, as t
 already do.
 
 ```
-phone ──Tailscale (HTTPS)──► MacBook: tailscale serve → Shannote (127.0.0.1:4567) ─┐
-                                                                                   ├─ git ─► GitHub vault ◄─ your laptop
-                                             Claude Code (your subscription) ◄─────┘
+phone ──HTTPS──► Tailscale (A) or Cloudflare + login (B) ──► MacBook: Shannote (127.0.0.1:4567) ─┐
+                                                                                                ├─ git ─► GitHub vault ◄─ your laptop
+                                                          Claude Code (your subscription) ◄─────┘
 ```
+
+Two ways for your phone to reach it; pick one (or both):
+
+- **A. Tailscale**: private network, nothing public. The Tailscale app has to be running on
+  your phone (you can set it as Android's always-on VPN).
+- **B. Cloudflare Tunnel** at a subdomain you own (e.g. `shannote.example.dev`): nothing to
+  install on the phone; Cloudflare asks you to sign in before anyone reaches the MacBook.
+  Needs a domain whose DNS is on Cloudflare. Only the subdomain is added; the rest of the
+  domain (say, your website) is untouched.
 
 Replace `<you>` below with your GitHub username.
 
@@ -40,7 +49,7 @@ shannote init ~/vault --device macbook      # adopts the existing vault; pick an
 shannote embed                              # search by meaning (downloads a small model once)
 ```
 
-## 3. Tailscale
+## 3A. Tailscale
 
 1. Install Tailscale for Mac from <https://tailscale.com/download> and sign in with the same
    account as your phone. In its menu, enable the command-line tool so `tailscale` works in
@@ -48,7 +57,7 @@ shannote embed                              # search by meaning (downloads a sma
 2. In the Tailscale admin console → DNS, make sure **MagicDNS** and **HTTPS Certificates** are
    on (`tailscale serve` needs them for the `https://…ts.net` address).
 
-## 4. Start the server
+## 4A. Start the server (Tailscale)
 
 ```bash
 shannote server install
@@ -61,6 +70,34 @@ prints a link like `https://macbook.tail1234.ts.net/?token=…`.
 - `shannote server status` shows whether it's running; the log is `~/.cache/shannote/server.log`.
 - `shannote server remove` takes it down; `tailscale serve reset` stops publishing it.
 - The link is a password. `shannote server install --new-token` replaces it.
+
+## 3B–4B. Cloudflare Tunnel instead (no app on the phone)
+
+1. Install cloudflared and sign it in to Cloudflare. It opens a browser: pick the domain.
+   ```bash
+   brew install cloudflared
+   cloudflared tunnel login
+   ```
+2. Start the server and the tunnel:
+   ```bash
+   shannote server install --cloudflare shannote.example.dev
+   ```
+   It creates a tunnel called `shannote`, adds a single DNS record for that subdomain (it
+   refuses a bare domain like `example.dev` and never overwrites an existing record), and runs
+   the tunnel in the background next to Shannote. It prints your phone link.
+3. Put a login in front of it, once, at <https://one.dash.cloudflare.com> (Zero Trust; the free
+   plan is enough):
+   - **Access → Applications → Add an application → Self-hosted.**
+   - Domain: `shannote.example.dev`.
+   - Policy: **Allow**, Include → **Emails** → your email address.
+   - Login method: a one-time code to your email works out of the box; Google is optional.
+   - Set the session duration to something like a month so the phone rarely asks again.
+
+   Do this straight after step 2: until then only Shannote's token protects the address.
+4. On your phone, open the printed `https://shannote.example.dev/?token=…` link once, sign in
+   to Cloudflare, then **Add to Home Screen**.
+
+`shannote server status` shows the tunnel too (log: `~/.cache/shannote/tunnel.log`).
 
 ## 5. Keep it awake
 
@@ -83,15 +120,17 @@ shannote schedule remove                    # on your other laptop
 
 ## 7. Your phone (Android)
 
-1. Install Tailscale from the Play Store and sign in with the same account.
-2. Open the link from step 4 in Chrome, once. It swaps the token for a cookie.
+1. Tailscale only: install Tailscale from the Play Store and sign in with the same account.
+2. Open the link from step 4A or 4B in Chrome, once. It swaps the token for a cookie.
 3. Chrome menu → **Add to Home Screen**. It opens full-screen like an app.
 4. Allow the microphone the first time you press the mic button.
 
 ## Updating
 
 ```bash
-cd ~/projects/shannote && git pull && npm install && npm run build && shannote server install
+cd ~/projects/shannote && git pull && npm install && npm run build
+shannote server install                                   # Tailscale
+shannote server install --cloudflare shannote.example.dev # or Cloudflare
 ```
 
 ## Good to know
