@@ -6,7 +6,7 @@ import { BrainError } from "../util.js";
 import { LinkResolver } from "../vault/resolve.js";
 import { splitFrontmatter } from "../vault/edit.js";
 import { renderMarkdown } from "./render.js";
-import { loadEditor, loadFont, UI_HTML } from "./ui.js";
+import { loadEditor, loadFont, loadIcon, UI_HTML } from "./ui.js";
 import { findGuest, listGuests, type Guest } from "../share/spaces.js";
 import { claudeVersion, findClaude, loadUsage, probeUsage, runClaude, saveUsage, type ClaudeEvent, type ClaudeUsage } from "../agent/claude.js";
 import { usageHistory } from "../agent/usage.js";
@@ -48,14 +48,23 @@ function resolverFor(brain: Brain): LinkResolver {
   return new LinkResolver(paths);
 }
 
+/** Lets a phone install Shannote as an app (own icon and window, no browser bar). */
 const MANIFEST = JSON.stringify({
+  id: "/",
   name: "Shannote",
   short_name: "Shannote",
+  description: "Your notes, plans and Claude",
   start_url: "/#/today",
+  scope: "/",
   display: "standalone",
   background_color: "#f3ebdf",
   theme_color: "#f3ebdf",
-  icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
+  icons: [
+    { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+    { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+    { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
+  ],
 });
 export const ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#8f5a3a"/><g fill="none" stroke="#fff8f0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 27h29v9a14 14 0 0 1-14 14h-1a14 14 0 0 1-14-14Z"/><path d="M43 30h4a6 6 0 0 1 0 12h-4"/><path d="M22 10c-2 3 2 5 0 8M31 10c-2 3 2 5 0 8"/></g></svg>`;
 
@@ -165,6 +174,13 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
         return send(res, 200, UI_HTML, "text/html");
       if (req.method === "GET" && url.pathname === "/manifest.webmanifest") return send(res, 200, MANIFEST, "application/manifest+json");
       if (req.method === "GET" && url.pathname === "/icon.svg") return send(res, 200, ICON, "image/svg+xml");
+      const icon = req.method === "GET" && url.pathname.match(/^\/icons\/(icon-(?:192|512|maskable-512)\.png)$/);
+      if (icon) {
+        const data = loadIcon(icon[1]!);
+        if (!data) return send(res, 404, { error: "icon not found" });
+        res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" });
+        return res.end(data);
+      }
       if (req.method === "GET" && url.pathname === "/editor.js") {
         const js = loadEditor();
         if (!js) return send(res, 404, "// editor not built: run npm run build", "text/javascript");

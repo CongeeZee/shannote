@@ -12,7 +12,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsup src/cli.ts --format esm --clean --external @huggingface/transformers --external kokoro-js && npm run build:editor && cp src/web/ui.html dist/ui.html && cp -r src/web/fonts dist/fonts",
+    "build": "tsup src/cli.ts --format esm --clean --external @huggingface/transformers --external kokoro-js && npm run build:editor && cp src/web/ui.html dist/ui.html && cp -r src/web/fonts dist/fonts && cp -r src/web/icons dist/icons",
     "dev": "tsx src/cli.ts",
     "web": "tsx src/cli.ts web --open",
     "test": "vitest run",

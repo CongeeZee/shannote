@@ -369,3 +369,25 @@ describe("Cloudflare tunnel", () => {
     expect(tunnelUnit(o)).toContain("ExecStart=/opt/homebrew/bin/cloudflared tunnel --no-autoupdate --config /Users/x/.config/shannote/cloudflared.yml run");
   });
 });
+
+describe("installing on a phone", () => {
+  it("has a manifest with PNG and maskable icons that Android can install", async () => {
+    const m = JSON.parse((await http("/manifest.webmanifest")).text);
+    expect(m).toMatchObject({ name: "Shannote", display: "standalone", start_url: "/#/today", scope: "/" });
+    const sizes = m.icons.filter((i: { type: string }) => i.type === "image/png").map((i: { sizes: string; purpose: string }) => `${i.sizes}/${i.purpose}`);
+    expect(sizes).toEqual(["192x192/any", "512x512/any", "512x512/maskable"]);
+    for (const i of m.icons.filter((i: { type: string }) => i.type === "image/png")) {
+      const png = await new Promise<Buffer>((resolve, reject) => {
+        request({ host: "127.0.0.1", port, path: i.src, headers: { host: `localhost:${port}` } }, (res) => {
+          const chunks: Buffer[] = []; res.on("data", (c) => chunks.push(c)); res.on("end", () => resolve(Buffer.concat(chunks)));
+        }).on("error", reject).end();
+      });
+      expect(png.subarray(1, 4).toString()).toBe("PNG");
+    }
+  });
+
+  it("asks for the manifest with cookies, so it gets past a login (Cloudflare Access, the token)", async () => {
+    const html = (await http("/")).text;
+    expect(html).toContain('<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">');
+  });
+});

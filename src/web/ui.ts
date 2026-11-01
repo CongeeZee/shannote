@@ -33,6 +33,22 @@ export function loadFont(name: string): Buffer | null {
   return data;
 }
 
+const iconCache = new Map<string, Buffer | null>();
+/** App icons for installing Shannote on a phone (PNG, as Android wants). */
+export function loadIcon(name: string): Buffer | null {
+  if (iconCache.has(name)) return iconCache.get(name)!;
+  let data: Buffer | null = null;
+  for (const base of ["./icons/", "../src/web/icons/"]) {
+    const p = fileURLToPath(new URL(`${base}${name}`, import.meta.url));
+    if (existsSync(p)) {
+      data = readFileSync(p);
+      break;
+    }
+  }
+  iconCache.set(name, data);
+  return data;
+}
+
 let editorCache: Buffer | null | undefined;
 
 /** The bundled editor (dist/editor.js, built by `npm run build:editor`). */
