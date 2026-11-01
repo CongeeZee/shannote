@@ -92,6 +92,25 @@ input[type=checkbox]:disabled { cursor: default; }
 .nav .count:not(:empty) { background: var(--panel-3); padding: 0 8px; border-radius: 999px; line-height: 20px; }
 .nav a.active .count:not(:empty) { background: var(--accent-soft); color: var(--accent); }
 .nav .count.alert:not(:empty) { background: var(--danger-soft); color: var(--danger); }
+.explorer { display: flex; flex-direction: column; min-height: 0; flex: 1; margin-top: 16px; border-top: 1px dashed var(--border-strong); padding-top: 10px; }
+.ex-head { display: flex; align-items: center; gap: 6px; padding: 0 4px 6px 6px; }
+.ex-toggle { all: unset; cursor: pointer; font-family: var(--mono); font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 6px; }
+.ex-toggle::before { content: "›"; font-size: 15px; transition: transform .12s; transform: rotate(90deg); }
+.explorer.closed .ex-toggle::before { transform: none; }
+.explorer.closed .ex-tree, .explorer.closed #ex-filter { display: none; }
+.explorer.closed { flex: 0; }
+#ex-filter { margin-left: auto; width: 0; flex: 1; max-width: 120px; font: inherit; font-size: 12.5px; background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 2px 8px; color: var(--text); outline: none; }
+#ex-filter:hover, #ex-filter:focus { border-color: var(--border-strong); background: var(--panel); }
+.ex-tree { overflow-y: auto; min-height: 0; flex: 1; font-size: 13.5px; padding-bottom: 8px; }
+.ex-tree details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 7px; color: var(--muted); font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ex-tree details > summary::-webkit-details-marker { display: none; }
+.ex-tree details > summary::before { content: "›"; color: var(--faint); width: 9px; flex: none; transition: transform .12s; }
+.ex-tree details[open] > summary::before { transform: rotate(90deg); }
+.ex-tree .kids { margin-left: 12px; padding-left: 6px; border-left: 1px solid var(--border); }
+.ex-tree a { display: block; padding: 3px 8px 3px 23px; border-radius: 7px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ex-tree summary:hover, .ex-tree a:hover { background: var(--panel-2); }
+.ex-tree a.on { background: var(--panel); color: var(--accent); font-weight: 650; box-shadow: var(--shadow); }
+.ex-tree .ex-empty { padding: 4px 10px; color: var(--faint); font-size: 12.5px; }
 .side-foot { margin-top: auto; font-size: 13px; color: var(--muted); padding: 14px 10px 0; border-top: 1px dashed var(--border-strong); display: grid; gap: 10px; }
 .sync-line { display: flex; align-items: center; gap: 8px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 0%, transparent); }
@@ -224,6 +243,116 @@ details.callout[open] > .callout-title::after { transform: rotate(90deg); }
 .callout-example, .callout-abstract, .callout-summary { --c: #8a6a9a; }
 .callout-quote { --c: var(--muted); }
 
+/* dashboard (home): panels either side of Claude */
+.section-label { font-family: var(--mono); font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 8px; margin: 2px 2px -8px; }
+.dash-top { display: flex; align-items: flex-end; gap: 14px 20px; flex-wrap: wrap; margin: 2px 0 18px; }
+.dash-top h1 { font-family: var(--display); font-size: 30px; font-weight: 520; letter-spacing: -.02em; margin: 0; line-height: 1.15; }
+.dash-top .greeting { margin: 0 0 2px; }
+.dash-status { margin-left: auto; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); background: var(--panel); border-radius: 999px; padding: 4px 11px; }
+.chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.chip.idle .dot { background: var(--ok); } .chip.busy .dot { background: var(--accent); animation: blink 1s ease-in-out infinite; } .chip.off .dot { background: var(--danger); }
+@keyframes blink { 50% { opacity: .25; } }
+.dash-clock { font-family: var(--mono); font-size: 24px; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+body[data-view="today"] .content { max-width: none; }
+.dash-grid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(440px, 1.5fr) minmax(260px, 1fr); gap: 20px; align-items: start; }
+.dash-col { min-width: 0; }
+.dash-cards { display: grid; gap: 20px; }
+.dash-core { display: flex; flex-direction: column; height: 72vh; min-height: 520px; }
+/* No conversation yet: the orb fills the panel instead of leaving a gap above the input. */
+.dash-core:not(.has-chat) .orb-wrap { flex: 1; align-content: center; }
+.dash-core:not(.has-chat) .chat-log { flex: none; }
+/* Desktop: the dashboard fits the window; each column scrolls on its own, the chat fills the middle. */
+@media (min-width: 1101px) and (min-height: 640px) {
+  body[data-view="today"] .content { height: calc(100vh - var(--topbar-h, 64px)); display: flex; flex-direction: column; padding-bottom: 18px; }
+  body[data-view="today"] .dash-grid { flex: 1; min-height: 0; align-items: stretch; }
+  .dash-col { overflow-y: auto; min-height: 0; margin: -6px; padding: 6px; }
+  .dash-core { height: auto; min-height: 0; }
+}
+/* Wide screens: the right-hand cards flow into two columns. */
+@media (min-width: 1680px) {
+  .dash-grid { grid-template-columns: minmax(300px, 1fr) minmax(520px, 1.45fr) minmax(600px, 2fr); }
+  .dash-cards { display: block; column-count: 2; column-gap: 20px; }
+  .dash-cards > .card { break-inside: avoid; margin-bottom: 20px; }
+}
+.dash-core .card-h .right .btn { font-family: var(--sans); }
+.orb-wrap { display: grid; justify-items: center; padding: 14px 0 4px; transition: padding .3s; }
+.orb { width: 230px; height: 230px; transition: width .35s, height .35s; }
+.dash-core.has-chat .orb { width: 96px; height: 96px; }
+.dash-core.has-chat .orb-label { display: none; }
+.dash-core.has-chat .orb-wrap { padding: 6px 0 0; }
+.orb-label { font-family: var(--mono); letter-spacing: .42em; font-size: 15px; color: var(--text); margin: 2px 0 0 .42em; }
+.orb-state { font-family: var(--mono); font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-top: 3px; }
+.chat-log { flex: 1; overflow-y: auto; padding: 10px 18px 6px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.msg { max-width: 92%; overflow-wrap: anywhere; font-size: 15px; line-height: 1.6; }
+.msg.user { align-self: flex-end; background: var(--accent-soft); color: var(--text); border-radius: 14px 14px 4px 14px; padding: 8px 13px; white-space: pre-wrap; }
+.msg.claude { align-self: flex-start; }
+.msg.claude p { margin: 0 0 .6em; } .msg.claude p:last-child { margin-bottom: 0; }
+.msg.claude ul, .msg.claude ol { margin: .2em 0 .6em; padding-left: 1.3em; }
+.msg.claude code { font-size: .86em; background: var(--panel-2); border: 1px solid var(--border); padding: .05em .35em; border-radius: 6px; }
+.msg.claude pre { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; overflow-x: auto; font-size: 13px; }
+.msg.claude pre code { background: none; border: 0; padding: 0; }
+.msg.claude .md-h { font-weight: 750; margin: .5em 0 .25em; }
+.msg.claude table { border-collapse: collapse; font-size: 13.5px; margin: .3em 0 .7em; }
+.msg.claude th, .msg.claude td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.msg .tools { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.msg .tool { font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; }
+.msg .err { color: var(--danger); font-size: 13.5px; margin-top: 4px; }
+.msg .cursor { display: inline-block; width: 7px; height: 1em; vertical-align: -2px; background: var(--accent); animation: blink 1s steps(2) infinite; margin-left: 2px; }
+.chat-empty { margin: auto 0; text-align: center; color: var(--faint); font-size: 14px; padding: 8px 0 14px; }
+.chat-form { display: flex; gap: 8px; align-items: flex-end; padding: 10px 14px 6px; border-top: 1px solid var(--border); }
+.chat-form textarea { flex: 1; resize: none; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 12px; padding: 9px 12px; font: inherit; font-size: 15px; line-height: 1.45; max-height: 9.5em; outline: none; }
+.chat-form textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.quick { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; padding: 4px 14px 8px; }
+.quick button { font: inherit; font-size: 12.5px; font-weight: 650; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 11px; cursor: pointer; }
+.quick button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.quick button:disabled { opacity: .5; cursor: default; }
+.usage { display: flex; gap: 16px; padding: 8px 18px 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--faint); }
+.usage > div { flex: 1; } .usage .bar { height: 5px; border-radius: 99px; background: var(--panel-3); overflow: hidden; margin-top: 4px; }
+.usage .bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.usage .bar i.hot { background: var(--danger); }
+.mini { list-style: none; margin: 0; padding: 4px 0; }
+.mini li { display: flex; gap: 10px; align-items: baseline; padding: 7px 18px; font-size: 14.5px; }
+.mini li + li { border-top: 1px dashed var(--border); }
+.mini li > a, .mini li > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mini .mini-meta { color: var(--faint); font-size: 12.5px; white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+.daily-mini { max-height: 260px; overflow: auto; padding: 14px 18px; font-size: 14.5px; }
+.brief-line { border-top: 1px solid var(--border); padding: 9px 18px; font-size: 12.5px; color: var(--faint); }
+.model-tag { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .04em; color: var(--faint); }
+.lim + .lim { margin-top: 14px; }
+.lim-top { display: flex; align-items: baseline; justify-content: space-between; font-size: 13.5px; font-weight: 650; color: var(--muted); }
+.lim-top b { font-family: var(--display); font-size: 24px; font-weight: 560; color: var(--text); font-variant-numeric: tabular-nums; }
+.lim-top b.hot { color: var(--danger); }
+.lim .bar { height: 7px; border-radius: 99px; background: var(--panel-3); overflow: hidden; margin: 5px 0 4px; }
+.lim .bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.lim .bar i.hot { background: var(--danger); }
+.lim-sub { font-size: 12px; color: var(--faint); }
+.lim-at { font-size: 11.5px; color: var(--faint); margin-top: 10px; }
+.u-hist { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+.u-hist > summary { cursor: pointer; font-size: 12.5px; color: var(--faint); margin-bottom: 10px; }
+.u-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-bottom: 14px; }
+.u-stats b { display: block; font-family: var(--display); font-size: 21px; font-weight: 560; color: var(--text); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.u-stats span { font-size: 12px; color: var(--faint); }
+.u-chart { position: relative; }
+.u-chart svg { display: block; width: 100%; height: 64px; overflow: visible; }
+.u-chart path { fill: var(--accent); }
+.u-chart g.on path { fill: var(--accent-hover); }
+.u-chart .hit { fill: transparent; }
+.u-chart line { stroke: var(--border-strong); stroke-width: 1; }
+.u-axis { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--faint); margin-top: 5px; }
+.u-tip { position: absolute; bottom: calc(100% + 4px); background: var(--panel-3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; font-size: 12px; white-space: nowrap; pointer-events: none; box-shadow: var(--shadow); }
+.u-proj { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+.u-proj b { color: var(--text); font-weight: 650; }
+.u-table { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.u-table summary { cursor: pointer; color: var(--faint); }
+.u-table table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.u-table th, .u-table td { text-align: left; padding: 3px 4px; border-bottom: 1px dashed var(--border); font-variant-numeric: tabular-nums; }
+@media (max-width: 1100px) {
+  .dash-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .dash-core { grid-column: 1 / -1; order: -1; }
+}
+@media (max-width: 760px) { .dash-grid { grid-template-columns: minmax(0, 1fr); } .orb { width: 150px; height: 150px; } .dash-core.has-chat .orb { width: 56px; height: 56px; } .dash-clock { font-size: 18px; } .dash-top h1 { font-size: 24px; } }
+
 /* note page */
 .note-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 30px; align-items: start; }
 .note-head { margin: 6px 0 20px; }
@@ -317,7 +446,7 @@ body.guest .owner-only { display: none !important; }
   .note-body { padding: 18px 18px; }
   .task { padding: 10px 14px; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 12px 12px 8px; border-right: 0; border-bottom: 1px solid var(--border); }
-  .brand { padding: 2px 6px 8px; font-size: 17px; } .brand-mark { width: 26px; height: 26px; } .side-foot { display: none; }
+  .brand { padding: 2px 6px 8px; font-size: 17px; } .brand-mark { width: 26px; height: 26px; } .side-foot, .explorer { display: none; }
   .nav { display: flex; gap: 4px; overflow-x: auto; width: 100%; scrollbar-width: none; }
   .nav a { padding: 7px 12px; white-space: nowrap; font-size: 14px; } .nav .count { display: none; }
   .topbar { padding: 10px 14px; } .content { padding: 10px 14px 32px; }
@@ -338,8 +467,12 @@ body.guest .owner-only { display: none !important; }
       <a href="#/tasks" data-r="tasks" class="owner-only"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m8 12.2 2.8 2.8L16.5 9"/></svg>Tasks<span class="count" id="c-tasks"></span></a>
       <a href="#/notes" data-r="notes"><svg viewBox="0 0 24 24"><path d="M6 3.5h8.5L19 8v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1-1.5Z"/><path d="M14 3.5V8h5M8.5 12.5h7M8.5 16h5"/></svg>Notes</a>
       <a href="#/handoffs" data-r="handoffs" class="owner-only"><svg viewBox="0 0 24 24"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></svg>Handoffs</a>
-      <a href="#/health" data-r="health" class="owner-only"><svg viewBox="0 0 24 24"><path d="M12 20s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 7.3 4.3 4.3 0 0 1 19.5 10c0 5.6-7.5 10-7.5 10Z"/></svg>Health<span class="count" id="c-health"></span></a>
+      <a href="#/sync" data-r="sync" class="owner-only"><svg viewBox="0 0 24 24"><path d="M19.5 10.5A7.5 7.5 0 0 0 6 6.6L4.5 8"/><path d="M4.5 4v4h4"/><path d="M4.5 13.5A7.5 7.5 0 0 0 18 17.4l1.5-1.4"/><path d="M19.5 20v-4h-4"/></svg>Sync<span class="count" id="c-health" title="Notes that need fixing"></span></a>
     </nav>
+    <section class="explorer" id="explorer" aria-label="Files">
+      <div class="ex-head"><button class="ex-toggle" id="ex-toggle" aria-expanded="true" title="Show or hide files">Files</button><input id="ex-filter" placeholder="Filter…" aria-label="Filter files" autocomplete="off"></div>
+      <div class="ex-tree" id="ex-tree" role="tree"></div>
+    </section>
     <div class="side-foot owner-only">
       <div class="sync-line"><span class="dot" id="sync-dot"></span><span id="sync-text">…</span></div>
       <div style="display:flex;gap:6px">
@@ -484,7 +617,7 @@ function mountEditor(card, n) {
     async onCreateNote(title) {
       const dir = n.path.includes("/") ? n.path.slice(0, n.path.lastIndexOf("/")) : "";
       const folder = /^(daily|inbox)(\/|$)/.test(dir) ? "" : dir;
-      try { await api("note/create", { title, folder }); toast("Created “" + title + "”"); }
+      try { await api("note/create", { title, folder }); toast("Created “" + title + "”"); loadExplorer(true); }
       catch (e) { e.status === 409 ? toast("Linked to the existing “" + title + "”") : toast("Couldn't create the note: " + e.message, true); }
     },
   });
@@ -623,31 +756,433 @@ function threadItem(t) {
     (t.log.length ? '<p class="faint" style="font-size:13.5px">' + inline(t.log[t.log.length - 1]) + "</p>" : "") + "</div>";
 }
 
+// ---------------------------------------------------------------- file explorer (sidebar)
+// A folder tree like Obsidian's or VS Code's. Folders you open stay open; the current
+// note's folders open by themselves and it's highlighted.
+const explorer = { rows: null, loaded: 0, open: new Set(), filter: "" };
+try { explorer.open = new Set(JSON.parse(localStorage.getItem("shannote-ex-open") || "[]")); } catch {}
+const saveExOpen = () => { try { localStorage.setItem("shannote-ex-open", JSON.stringify([...explorer.open])); } catch {} };
+
+async function loadExplorer(force = false) {
+  if (!force && explorer.rows && Date.now() - explorer.loaded < 20000) return renderExplorer();
+  try { explorer.rows = await api("tree"); explorer.loaded = Date.now(); } catch { return; }
+  renderExplorer();
+}
+
+function renderExplorer() {
+  const box = $("#ex-tree"); if (!box || !explorer.rows) return;
+  const current = location.hash.startsWith("#/note/") ? decodeURIComponent(location.hash.slice(7).split("?")[0]) : null;
+  const f = explorer.filter.toLowerCase();
+  const strip = (p) => (isGuest() && p.startsWith(me.space.dir + "/") ? p.slice(me.space.dir.length + 1) : p);
+  const root = { dirs: new Map(), files: [] };
+  for (const r of explorer.rows) {
+    if (r.path.startsWith("_brain/")) continue;
+    if (f && !(r.path + " " + r.title).toLowerCase().includes(f)) continue;
+    const parts = strip(r.path).split("/"); let node = root, key = "";
+    for (const p of parts.slice(0, -1)) {
+      key = key ? key + "/" + p : p;
+      if (!node.dirs.has(p)) node.dirs.set(p, { key, dirs: new Map(), files: [] });
+      node = node.dirs.get(p);
+    }
+    node.files.push(r);
+  }
+  const onPath = (key) => current && strip(current).startsWith(key + "/");
+  const draw = (node) =>
+    [...node.dirs].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true })).map(([name, d]) =>
+      '<details data-key="' + esc(d.key) + '"' + (f || explorer.open.has(d.key) || onPath(d.key) ? " open" : "") + '><summary title="' + esc(d.key) + '">' + esc(name) + '</summary><div class="kids">' + draw(d) + "</div></details>").join("") +
+    node.files.sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true })).map((r) =>
+      '<a href="' + noteHref(r.path) + '" title="' + esc(r.path) + '"' + (r.path === current ? ' class="on" aria-current="page"' : "") + ">" + esc(r.title) + "</a>").join("");
+  box.innerHTML = draw(root) || '<div class="ex-empty">' + (f ? "No matches." : "No notes yet.") + "</div>";
+  const on = box.querySelector("a.on");
+  if (on) {
+    const b = on.getBoundingClientRect(), v = box.getBoundingClientRect();
+    if (b.top < v.top || b.bottom > v.bottom) on.scrollIntoView({ block: "center" });
+  }
+}
+
+$("#ex-tree").addEventListener("toggle", (e) => {
+  const d = e.target; if (!d.dataset || !d.dataset.key || explorer.filter) return;
+  if (d.open) explorer.open.add(d.dataset.key); else explorer.open.delete(d.dataset.key);
+  saveExOpen();
+}, true);
+$("#ex-filter").addEventListener("input", (e) => { explorer.filter = e.target.value.trim(); renderExplorer(); });
+$("#ex-filter").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.target.value = ""; explorer.filter = ""; renderExplorer(); e.target.blur(); }
+  if (e.key === "Enter") { const a = $("#ex-tree a"); if (a) location.hash = a.getAttribute("href"); }
+});
+$("#ex-toggle").addEventListener("click", () => {
+  const closed = $("#explorer").classList.toggle("closed");
+  $("#ex-toggle").setAttribute("aria-expanded", String(!closed));
+  try { localStorage.setItem("shannote-ex-closed", closed ? "1" : ""); } catch {}
+});
+try { if (localStorage.getItem("shannote-ex-closed")) { $("#explorer").classList.add("closed"); $("#ex-toggle").setAttribute("aria-expanded", "false"); } } catch {}
+window.addEventListener("hashchange", () => loadExplorer());
+
+// ---------------------------------------------------------------- dashboard: chat with Claude
+// Messages stream from POST /api/claude (Claude Code running with this vault's tools). The
+// conversation lives here, not in the DOM, so re-rendering the page (a ticked task) keeps it.
+const dash = { session: null, msgs: [], busy: false, ctrl: null, usage: null, available: true, wrote: false };
+try { const c = JSON.parse(localStorage.getItem("shannote-chat") || "null"); if (c) { dash.session = c.session; dash.msgs = c.msgs || []; } } catch {}
+const saveChat = () => { try { localStorage.setItem("shannote-chat", JSON.stringify({ session: dash.session, msgs: dash.msgs.slice(-40) })); } catch {} };
+/** Tools that change the vault: when Claude used one, the side panels are refreshed. */
+const WRITE_TOOLS = new Set(["brain_edit", "brain_create", "brain_capture", "brain_task_update", "brain_move", "brain_delete", "brain_daily", "brain_rollover_tasks", "brain_inbox", "brain_thread_update", "brain_links"]);
+const TOOL_NAMES = { brain_search: "searched", brain_read: "read", brain_edit: "edited", brain_create: "created", brain_capture: "captured", brain_tasks: "checked tasks", brain_task_update: "updated task", brain_calendar: "checked calendar", brain_daily: "daily note", brain_plan: "planning", brain_inbox: "inbox", brain_recent: "recent changes", brain_related: "related notes", brain_context_pack: "gathered context", brain_move: "moved", brain_delete: "deleted", brain_links: "links", brain_threads: "threads" };
+const QUICK = ["Plan my day", "What's due this week?", "Add an event…", "Triage my inbox", "How did today go?", "Weekly review"];
+/** Quick prompts ending in "…" start a message for you to finish instead of sending straight away. */
+const QUICK_PREFILL = { "Add an event…": "Add to my calendar: " };
+
+/** Small markdown renderer for Claude's replies: paragraphs, lists, tables, code, links. */
+function md(src) {
+  const inl = (t) => t.split(/(`[^`\n]+`)/).map((part) => {
+    if (/^`[^`]+`$/.test(part)) {
+      const c = part.slice(1, -1);
+      return /^[^<>]+\.md$/.test(c) ? '<a href="' + noteHref(c) + '"><code>' + esc(c) + "</code></a>" : "<code>" + esc(c) + "</code>";
+    }
+    return esc(part)
+      .replace(/\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]/g, (_, t, a) => '<a href="#" class="wikilink" data-open="' + t + '">' + (a || t) + "</a>")
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+      .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>");
+  }).join("");
+  const out = [];
+  let para = [], list = null, table = [];
+  const flush = () => {
+    if (para.length) { out.push("<p>" + para.map(inl).join("<br>") + "</p>"); para = []; }
+    if (list) { out.push("<" + list.tag + ">" + list.items.map((i) => "<li>" + inl(i) + "</li>").join("") + "</" + list.tag + ">"); list = null; }
+    if (table.length) {
+      const rows = table.filter((r) => !/^\|?\s*:?-{2,}/.test(r)).map((r) => r.replace(/^\||\|$/g, "").split("|").map((c) => inl(c.trim())));
+      out.push("<table>" + rows.map((r, i) => "<tr>" + r.map((c) => (i ? "<td>" : "<th>") + c + (i ? "</td>" : "</th>")).join("") + "</tr>").join("") + "</table>");
+      table = [];
+    }
+  };
+  const parts = String(src).split(/```[^\n]*\n?/);
+  parts.forEach((chunk, i) => {
+    if (i % 2) { flush(); out.push("<pre><code>" + esc(chunk.replace(/\n$/, "")) + "</code></pre>"); return; }
+    for (const line of chunk.split("\n")) {
+      const li = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/);
+      if (/^\s*\|.*\|\s*$/.test(line)) { if (para.length || list) flush(); table.push(line.trim()); }
+      else if (li) { const tag = /\d/.test(li[1]) ? "ol" : "ul"; if (para.length || table.length || (list && list.tag !== tag)) flush(); (list = list || { tag, items: [] }).items.push(li[2]); }
+      else if (/^#{1,6}\s/.test(line)) { flush(); out.push('<div class="md-h">' + inl(line.replace(/^#+\s*/, "")) + "</div>"); }
+      else if (!line.trim()) flush();
+      else { if (list || table.length) flush(); para.push(line); }
+    }
+  });
+  flush();
+  return out.join("");
+}
+
+let chatFrame = 0;
+function renderChat() {
+  cancelAnimationFrame(chatFrame);
+  chatFrame = requestAnimationFrame(() => {
+    const log = $("#chat-log"); if (!log) return;
+    const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+    log.innerHTML = dash.msgs.length ? dash.msgs.map((m, i) => m.role === "user"
+      ? '<div class="msg user">' + esc(m.text) + "</div>"
+      : '<div class="msg claude">' + (m.tools.length ? '<div class="tools">' + m.tools.map((t) => '<span class="tool" title="' + esc(t.name) + '">' + esc(TOOL_NAMES[t.name] || t.name) + (t.detail ? " · " + esc(t.detail) : "") + "</span>").join("") + "</div>" : "") +
+        md(m.text) + (dash.busy && i === dash.msgs.length - 1 && !m.error ? '<span class="cursor"></span>' : "") + (m.error ? '<div class="err">' + esc(m.error) + "</div>" : "") + "</div>").join("")
+      : '<div class="chat-empty">' + (dash.available ? "Ask about your notes, plans and tasks.<br>Claude can read and update them." : "Chat needs Claude Code installed on this computer (<code>claude</code> on your PATH).") + "</div>";
+    if (stick) log.scrollTop = log.scrollHeight;
+    const core = $(".dash-core"); if (core) core.classList.toggle("has-chat", dash.msgs.length > 0);
+    const state = !dash.available ? ["off", "Offline"] : dash.busy === "answering" ? ["busy", "Answering"] : dash.busy ? ["busy", "Thinking"] : ["idle", "Idle"];
+    const chip = $("#claude-chip"); if (chip) { chip.className = "chip " + state[0]; chip.lastChild.textContent = "Claude · " + state[1]; }
+    const st = $(".orb-state"); if (st) st.textContent = state[1];
+    const send = $("#chat-send"); if (send) { send.textContent = dash.busy ? "Stop" : "Send"; send.classList.toggle("primary", !dash.busy); send.disabled = !dash.available; }
+    document.querySelectorAll(".quick button").forEach((b) => (b.disabled = !!dash.busy || !dash.available));
+  });
+}
+
+function renderUsage() {
+  const el = $("#usage"); if (!el) return;
+  const u = dash.usage;
+  if (!u || (!u.fiveHour && !u.sevenDay)) { el.style.display = "none"; return; }
+  el.style.display = "";
+  const when = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString(undefined, { weekday: "short", hour: "numeric" }); };
+  const bar = (label, w) => w ? '<div title="Resets ' + esc(when(w.resetsAt)) + '">' + label + " · " + (new Date(w.resetsAt) <= new Date() ? "0" : Math.round(w.utilization * 100)) + "%" + (untilText(w.resetsAt) ? ' <span class="faint">· resets ' + untilText(w.resetsAt) + "</span>" : "") + '<div class="bar"><i class="' + (w.utilization > .85 ? "hot" : "") + '" style="width:' + Math.min(100, Math.round(w.utilization * 100)) + '%"></i></div></div>' : "";
+  el.innerHTML = bar("Session", u.fiveHour) + bar("Week", u.sevenDay);
+}
+
+async function chatSend(prompt) {
+  prompt = prompt.trim();
+  if (!prompt || dash.busy || !dash.available) return;
+  const m = { role: "claude", text: "", tools: [] };
+  dash.msgs.push({ role: "user", text: prompt }, m);
+  dash.busy = "thinking"; dash.wrote = false;
+  dash.ctrl = new AbortController();
+  renderChat();
+  const onEvent = (e) => {
+    if (e.type === "session") { dash.session = e.id; const tag = $("#model-tag"); if (e.model && tag && !tag.textContent.startsWith(modelName(e.model))) tag.textContent = modelName(e.model) + (tag.textContent.includes("Claude Code") ? " · " + tag.textContent.slice(tag.textContent.indexOf("Claude Code")) : ""); }
+    else if (e.type === "text") { m.text += e.text; dash.busy = "answering"; }
+    else if (e.type === "tool") { m.tools.push(e); dash.busy = "thinking"; if (WRITE_TOOLS.has(e.name)) dash.wrote = true; }
+    else if (e.type === "usage") { dash.usage = e.usage; renderUsage(); }
+    else if (e.type === "done") { if (e.session) dash.session = e.session; }
+    else if (e.type === "error") m.error = e.message;
+    renderChat();
+  };
+  try {
+    const res = await fetch("/api/claude", { method: "POST", headers: { "content-type": "application/json", "x-brain": "1" }, body: JSON.stringify({ prompt, session: dash.session }), signal: dash.ctrl.signal });
+    if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || res.statusText); }
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, nl); buf = buf.slice(nl + 1); if (line.trim()) onEvent(JSON.parse(line)); }
+    }
+  } catch (e) {
+    m.error = e.name === "AbortError" ? "Stopped." : e.message;
+  }
+  if (!m.text && !m.error) m.error = "No answer came back.";
+  dash.busy = false; dash.ctrl = null;
+  saveChat(); renderChat();
+  if (dash.wrote) { refreshCounts(); loadExplorer(true); if (view.dataset.view === "today") refreshPanels(); }
+}
+function chatStop() { if (dash.ctrl) dash.ctrl.abort(); api("claude/stop", {}).catch(() => {}); }
+
+/** Particle sphere in the accent colour. It spins faster while Claude works; still for reduced motion. */
+function startOrb(canvas) {
+  const N = 520, pts = [];
+  for (let i = 0; i < N; i++) {
+    const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = i * Math.PI * (3 - Math.sqrt(5));
+    pts.push([Math.cos(th) * r, y, Math.sin(th) * r, 0.6 + Math.random() * 0.8]);
+  }
+  const ctx = canvas.getContext("2d");
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let angle = 0, speed = 0.15, pulse = 0, last = performance.now();
+  const frame = (now) => {
+    if (!canvas.isConnected) return;
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const dpr = devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+    if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+    const target = dash.busy === "thinking" ? 1.1 : dash.busy ? 0.6 : 0.15;
+    speed += (target - speed) * Math.min(1, dt * 3);
+    angle += speed * dt; pulse += dt * (dash.busy ? 5 : 1.2);
+    const color = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#d9a26f";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const R = Math.min(w, h) * 0.42 * (1 + (dash.busy ? 0.035 : 0.015) * Math.sin(pulse));
+    const ca = Math.cos(angle), sa = Math.sin(angle), tilt = 0.35, ct = Math.cos(tilt), st = Math.sin(tilt);
+    ctx.fillStyle = color;
+    for (const [x0, y0, z0, s] of pts) {
+      const x = x0 * ca + z0 * sa, z1 = -x0 * sa + z0 * ca;
+      const y = y0 * ct - z1 * st, z = y0 * st + z1 * ct;
+      const depth = (z + 1) / 2;
+      ctx.globalAlpha = 0.12 + depth * 0.78;
+      const size = (0.5 + depth * 1.3) * s;
+      ctx.fillRect(w / 2 + x * R - size / 2, h / 2 + y * R - size / 2, size, size);
+    }
+    ctx.globalAlpha = 1;
+    if (!still || dash.busy) requestAnimationFrame(frame);
+    else setTimeout(() => requestAnimationFrame(frame), 1000); // reduced motion: redraw rarely, for state changes
+  };
+  requestAnimationFrame(frame);
+}
+
+function startClock() {
+  const tick = () => {
+    const el = $("#dash-clock");
+    if (!el) return clearInterval(timer);
+    el.textContent = new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  };
+  const timer = setInterval(tick, 15000);
+  tick();
+}
+
+/** Recently edited notes, from the git log (newest first, one row per note). */
+function recentNotes(log) {
+  const seen = new Map();
+  for (const c of log) for (const f of c.files || []) {
+    if (!f.endsWith(".md") || /^(_brain|inbox)\//.test(f) || /(^|\/)\./.test(f) || seen.has(f)) continue;
+    seen.set(f, c.date);
+  }
+  return [...seen].slice(0, 7);
+}
+
+let dashDate = null;
+async function refreshPanels() {
+  const date = dashDate || today();
+  const isToday = date === today();
+  const [d, projects, inbox, recent, usage, brief, claude] = await Promise.all([
+    api("today?date=" + date),
+    api("projects?limit=8").catch(() => []),
+    api("inbox?suggestions=0").catch(() => ({ entries: [] })),
+    api("recent?limit=40").catch(() => []),
+    api("claude/usage?days=30").catch(() => null),
+    api("brief").catch(() => []),
+    api("claude").catch(() => null),
+  ]);
+  const left = $("#dash-left"), right = $("#dash-right");
+  if (!left || !right) return;
+  const morning = brief.find((b) => b.kind === "morning");
+  const briefLine = isToday ? '<div class="brief-line">' + (morning
+    ? "Morning brief runs daily" + (morning.next ? " · next " + esc(briefWhen(morning.next)) : "")
+    : 'No scheduled morning brief. Run <code>shannote schedule install</code> to have Claude write one every morning.') + "</div>" : "";
+  const daily = d.daily
+    ? '<section class="card"><div class="card-h">Daily note<span class="right"><a class="btn sm ghost" href="' + noteHref(d.daily.path) + '">Open</a></span></div><div class="daily-mini prose">' + (d.dailyHtml.trim() || '<p class="faint">Empty so far.</p>') + "</div>" + briefLine + "</section>"
+    : '<section class="card"><div class="card-h">Daily note</div><div class="card-b"><p class="muted" style="margin-top:0">No daily note for ' + (isToday ? "today" : longDate(date)) + " yet. Ask Claude to <b>plan my day</b>, or create an empty one.</p>" + '<button class="btn primary sm" id="mk-daily" data-date="' + date + '">Create daily note</button></div>' + briefLine + "</section>";
+  left.innerHTML = scheduleCard(d.schedule, date, isToday) +
+    (d.overdue.length ? taskCard('<span style="color:var(--danger)">Overdue</span>', d.overdue, "") : "") +
+    taskCard("Due " + (isToday ? "today" : shortDate(date)), d.dueToday, "Nothing due.") +
+    taskCard("Next 7 days", d.upcoming, "Nothing scheduled this week.");
+  const notes = recentNotes(recent);
+  right.innerHTML =
+    '<section class="card"><div class="card-h">Inbox <span class="n">' + inbox.entries.length + '</span><span class="right"><a class="btn sm ghost" href="#/inbox">Triage</a></span></div>' +
+      (inbox.entries.length ? '<ul class="mini">' + inbox.entries.slice(0, 5).map((e) => "<li><span>" + inline(e.text.length > 140 ? e.text.slice(0, 140) + "…" : e.text) + '</span><span class="mini-meta">' + esc(e.date ? shortDate(e.date) : "") + "</span></li>").join("") + "</ul>" : '<div class="empty">Inbox zero.</div>') + "</section>" +
+    '<section class="card"><div class="card-h">Recent notes</div>' +
+      (notes.length ? '<ul class="mini">' + notes.map(([p, when]) => '<li><a href="' + noteHref(p) + '">' + esc(p.split("/").pop().replace(/\.md$/, "")) + '</a><span class="mini-meta">' + ago(when) + "</span></li>").join("") + "</ul>" : '<div class="empty">Nothing edited yet.</div>') + "</section>" +
+    '<section class="card"><div class="card-h">Projects <span class="n">' + projects.length + "</span></div>" +
+      (projects.length ? '<ul class="mini">' + projects.map((p) => '<li><a href="' + (p.hub ? noteHref(p.hub) : "#/notes?q=" + enc(p.path)) + '">' + esc(p.name) + '</a><span class="mini-meta">' +
+        (p.nextDue ? '<span class="pill ' + (p.nextDue < today() ? "danger" : p.nextDue === today() ? "accent" : "") + '">' + shortDate(p.nextDue) + "</span>" : "") +
+        (p.openTasks ? '<span title="Open tasks">' + p.openTasks + " open</span>" : ago(p.updated)) + "</span></li>").join("") + "</ul>" : '<div class="empty">Folders under <code>projects/</code> (or your own, like <code>uni/</code>) show up here.</div>') + "</section>" +
+    daily +
+    (usage || claude ? usageCard(usage, claude && claude.available ? claude.usage : null, claude && claude.available) : "") +
+    (d.sessions.length ? '<section class="card"><div class="card-h">Latest handoff<span class="right"><a class="btn sm ghost" href="#/handoffs">All</a></span></div>' + handoffItem(d.sessions[0]) + "</section>" : "") +
+    (d.threads.length ? '<section class="card"><div class="card-h">Active threads <span class="n">' + d.threads.length + "</span></div>" + d.threads.slice(0, 4).map(threadItem).join("") + "</section>" : "");
+  const mk = $("#mk-daily");
+  if (mk) mk.onclick = async () => { mk.disabled = true; try { await api("daily", { date: mk.dataset.date }); refreshPanels(); } catch (e) { toast(e.message, true); mk.disabled = false; } };
+  wireUsageCard();
+}
+
+/** systemd's "Mon 2026-11-02 07:30:00 AEDT" → "tomorrow 7:30 am". */
+function briefWhen(s) {
+  const m = s.match(/(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2})/);
+  if (!m) return s;
+  const t = new Date(m[1] + "T" + m[2] + ":" + m[3] + ":00");
+  return shortDate(m[1]) + " " + t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+const fmtTokens = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
+/** "claude-opus-5-5" → "Opus 5.5". */
+const modelName = (id) => { const m = String(id || "").match(/claude-([a-z]+)-(\d+)(?:-(\d+))?/); return m ? m[1][0].toUpperCase() + m[1].slice(1) + " " + m[2] + (m[3] && m[3].length < 3 ? "." + m[3] : "") : id || ""; };
+
+/** "in 54 min" / "in 3 h" / "in 2 days" until an ISO time. */
+function untilText(iso) {
+  const ms = new Date(iso) - Date.now();
+  if (!(ms > 0)) return "";
+  const m = Math.round(ms / 60000);
+  return m < 60 ? "in " + m + " min" : m < 60 * 36 ? "in " + Math.round(m / 60) + " h" : "in " + Math.round(m / 1440) + " days";
+}
+function resetText(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return (sameDay ? "" : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) + ", ") + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/** Claude limits (5-hour session, week) with reset times, then token history from the logs. */
+let usageDays = [];
+function usageCard(u, limits, canRefresh) {
+  const limit = (title, sub, w) => {
+    if (!w) return "";
+    const reset = new Date(w.resetsAt) <= new Date(); // the window has rolled over since we last asked
+    const pct = reset ? 0 : Math.round(w.utilization * 100);
+    return '<div class="lim"><div class="lim-top"><span>' + title + '</span><b class="' + (pct >= 85 ? "hot" : "") + '">' + (reset ? "0%" : pct + "%") + "</b></div>" +
+      '<div class="bar"><i class="' + (pct >= 85 ? "hot" : "") + '" style="width:' + Math.min(100, pct) + '%"></i></div>' +
+      '<div class="lim-sub">' + sub + " · " + (reset ? "reset at " + esc(resetText(w.resetsAt)) + "; refresh for the latest" : "resets " + esc(resetText(w.resetsAt)) + (untilText(w.resetsAt) ? " (" + untilText(w.resetsAt) + ")" : "")) + "</div></div>";
+  };
+  const lims = limits ? limit("Current session", "5-hour window", limits.fiveHour) + limit("This week", "7-day window", limits.sevenDay) : "";
+  const head = '<section class="card usage-card"><div class="card-h">Claude limits' + (canRefresh ? '<span class="right"><button class="btn sm ghost" id="usage-refresh" title="Ask Claude Code for your current limits (a tiny Haiku request)">Refresh</button></span>' : "") + '</div><div class="card-b">' +
+    (lims || '<p class="faint" style="margin:0 0 10px">No reading yet. ' + (canRefresh ? "Press Refresh, or chat with Claude." : "Claude Code isn't installed here.") + "</p>") +
+    (limits && limits.at ? '<div class="lim-at">Updated ' + ago(limits.at) + "</div>" : "");
+  if (!u) return head + "</div></section>";
+  usageDays = u.days;
+  const today = u.days[u.days.length - 1] || { messages: 0, output: 0 };
+  const max = Math.max(1, ...u.days.map((d) => d.output));
+  const W = 300, H = 64, gap = 2, n = u.days.length, bw = (W - gap * (n - 1)) / n;
+  const bars = u.days.map((d, i) => {
+    const h = d.output ? Math.max(2, (d.output / max) * (H - 2)) : 0, x = i * (bw + gap), y = H - h, r = Math.min(3, bw / 2, h);
+    const mark = h ? '<path d="M' + x + "," + H + "V" + (y + r) + "Q" + x + "," + y + " " + (x + r) + "," + y + "H" + (x + bw - r) + "Q" + (x + bw) + "," + y + " " + (x + bw) + "," + (y + r) + "V" + H + 'Z"/>' : "";
+    return '<g data-i="' + i + '">' + mark + '<rect class="hit" x="' + (x - gap / 2) + '" y="0" width="' + (bw + gap) + '" height="' + H + '"/></g>';
+  }).join("");
+  const label = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  let open = false; try { open = localStorage.getItem("shannote-usage-hist") === "1"; } catch {}
+  return head + '<details class="u-hist"' + (open ? " open" : "") + "><summary>Token history · " + fmtTokens(today.output) + " out today</summary>" +
+    '<div class="u-stats"><div><b>' + today.messages + "</b><span>replies today</span></div><div><b>" + fmtTokens(today.output) + "</b><span>tokens out today</span></div>" +
+      "<div><b>" + fmtTokens(u.totals.output) + "</b><span>tokens out · 30d</span></div><div><b>" + u.totals.sessions + "</b><span>sessions · 30d</span></div></div>" +
+    '<div class="u-chart"><svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" role="img" aria-label="Output tokens per day, last 30 days">' + bars + '<line x1="0" y1="' + (H - 0.5) + '" x2="' + W + '" y2="' + (H - 0.5) + '"/></svg>' +
+      '<div class="u-tip" hidden></div><div class="u-axis"><span>' + label(u.days[0].date) + "</span><span>Output tokens per day</span><span>today</span></div></div>" +
+    (u.projects.length ? '<div class="u-proj">' + u.projects.slice(0, 4).map((p) => "<span>" + esc(p.project) + " <b>" + fmtTokens(p.output) + "</b></span>").join("") + "</div>" : "") +
+    '<details class="u-table"><summary>Table</summary><table><tr><th>Day</th><th>Replies</th><th>Tokens out</th></tr>' +
+      u.days.slice().reverse().filter((d) => d.messages).map((d) => "<tr><td>" + label(d.date) + "</td><td>" + d.messages + "</td><td>" + d.output.toLocaleString() + "</td></tr>").join("") + "</table></details>" +
+    "</details></div></section>";
+}
+function wireUsageCard() {
+  const btn = $("#usage-refresh");
+  if (btn) btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = "Checking…";
+    try { const r = await api("claude/usage/refresh", {}); dash.usage = r.usage; renderUsage(); await refreshPanels(); }
+    catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = "Refresh"; }
+  };
+  const hist = $(".u-hist");
+  if (hist) hist.addEventListener("toggle", () => { try { localStorage.setItem("shannote-usage-hist", hist.open ? "1" : ""); } catch {} });
+  wireUsageChart();
+}
+function wireUsageChart() {
+  const chart = $(".u-chart"); if (!chart) return;
+  const tip = chart.querySelector(".u-tip");
+  chart.querySelector("svg").addEventListener("mousemove", (e) => {
+    const g = e.target.closest("[data-i]");
+    chart.querySelectorAll("g.on").forEach((x) => x.classList.remove("on"));
+    if (!g) { tip.hidden = true; return; }
+    g.classList.add("on");
+    const d = usageDays[+g.dataset.i];
+    tip.innerHTML = "<b>" + new Date(d.date + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) + "</b><br>" + d.messages + " replies · " + fmtTokens(d.output) + " tokens out" + (d.sessions ? " · " + d.sessions + (d.sessions === 1 ? " session" : " sessions") : "");
+    tip.hidden = false;
+    const box = chart.getBoundingClientRect(), x = e.clientX - box.left;
+    tip.style.left = Math.min(Math.max(x - tip.offsetWidth / 2, 0), box.width - tip.offsetWidth) + "px";
+  });
+  chart.querySelector("svg").addEventListener("mouseleave", () => { tip.hidden = true; chart.querySelectorAll("g.on").forEach((x) => x.classList.remove("on")); });
+}
+
 // ---------------------------------------------------------------- views
 const views = {
   async today(params) {
-    const date = params.get("date") || today();
-    const d = await api("today?date=" + date);
+    dashDate = params.get("date") || null;
+    const date = dashDate || today();
     const isToday = date === today();
     const nav = '<div class="seg"><a href="#/today?date=' + shiftDate(date, -1) + '">‹</a><a class="' + (isToday ? "on" : "") + '" href="#/today">Today</a><a href="#/today?date=' + shiftDate(date, 1) + '">›</a></div>';
-    const daily = d.daily
-      ? '<section class="card"><div class="card-h">Daily note<span class="right"><a class="btn sm ghost" href="' + noteHref(d.daily.path) + '">Open</a></span></div><div class="card-b prose" style="padding:18px 22px">' + d.dailyHtml + "</div></section>"
-      : '<section class="card"><div class="card-h">Daily note</div><div class="card-b"><p class="muted" style="margin-top:0">No daily note for ' + (isToday ? "today" : longDate(date)) + ' yet. Ask Claude to <b>plan my day</b> (or run the <i>morning_brief</i> prompt) and it will write your schedule and plan here, or create an empty one.</p><button class="btn primary" id="mk-daily" data-date="' + date + '">Create daily note</button></div></section>';
     view.innerHTML =
-      (isToday ? '<div class="greeting">' + greeting() + "</div>" : "") +
-      '<div class="page-title"><h1>' + longDate(date) + "</h1>" + nav + "</div>" +
-      '<div class="grid-2"><div class="stack">' + scheduleCard(d.schedule, date, isToday) + daily +
-        '<section class="card"><div class="card-h">Latest handoffs<span class="right"><a class="btn sm ghost" href="#/handoffs">All</a></span></div>' +
-          (d.sessions.length ? d.sessions.slice(0, 3).map(handoffItem).join("") : '<div class="empty">No sessions yet. When Claude ends a session it writes a handoff here, so any device can pick up where it left off.</div>') + "</section>" +
-      '</div><div class="stack">' +
-        (d.overdue.length ? taskCard('<span style="color:var(--danger)">Overdue</span>', d.overdue, "") : "") +
-        taskCard("Due " + (isToday ? "today" : shortDate(date)), d.dueToday, "Nothing due. ") +
-        taskCard("Next 7 days", d.upcoming, "Nothing scheduled this week.") +
-        '<section class="card"><div class="card-h">Active threads <span class="n">' + d.threads.length + "</span></div>" +
-          (d.threads.length ? d.threads.slice(0, 6).map(threadItem).join("") : '<div class="empty">No open threads.</div>') + "</section>" +
-      "</div></div>";
-    const mk = $("#mk-daily");
-    if (mk) mk.onclick = async () => { mk.disabled = true; try { await api("daily", { date: mk.dataset.date }); route(); } catch (e) { toast(e.message, true); mk.disabled = false; } };
+      '<div class="dash-top"><div>' + (isToday ? '<div class="greeting">' + greeting() + "</div>" : "") + "<h1>" + longDate(date) + "</h1></div>" + nav +
+        '<div class="dash-status"><span class="chip idle" id="claude-chip"><span class="dot"></span><span>Claude · Idle</span></span><span class="dash-clock" id="dash-clock"></span></div></div>' +
+      '<div class="dash-grid"><div class="dash-col"><div class="stack" id="dash-left"><div class="loading">One moment…</div></div></div>' +
+        '<section class="card dash-core"><div class="card-h">Claude <span class="model-tag" id="model-tag"></span><span class="right"><button class="btn sm ghost" id="chat-new" title="Start a new conversation">New chat</button></span></div>' +
+          '<div class="orb-wrap"><canvas class="orb" aria-hidden="true"></canvas><div class="orb-label">CLAUDE</div><div class="orb-state">Idle</div></div>' +
+          '<div class="chat-log" id="chat-log" aria-live="polite"></div>' +
+          '<form class="chat-form" id="chat-form"><textarea id="chat-in" rows="1" placeholder="Ask Claude…" title="Enter sends · Shift+Enter for a new line" aria-label="Message Claude"></textarea><button class="btn primary" id="chat-send" type="submit">Send</button></form>' +
+          '<div class="quick">' + QUICK.map((q) => "<button type=\"button\">" + esc(q) + "</button>").join("") + "</div>" +
+          '<div class="usage" id="usage" style="display:none"></div></section>' +
+        '<div class="dash-col"><div class="dash-cards" id="dash-right"></div></div></div>';
+    startOrb($(".orb"));
+    startClock();
+    const input = $("#chat-in");
+    const grow = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 150) + "px"; };
+    // Ticking a task re-renders the page; keep what was being typed.
+    input.value = dash.draft || ""; grow();
+    input.addEventListener("input", () => { dash.draft = input.value; grow(); });
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#chat-form").requestSubmit(); } });
+    $("#chat-form").onsubmit = (e) => {
+      e.preventDefault();
+      if (dash.busy) return chatStop();
+      const text = input.value; input.value = dash.draft = ""; grow();
+      chatSend(text);
+    };
+    document.querySelectorAll(".quick button").forEach((b) => (b.onclick = () => {
+      const pre = QUICK_PREFILL[b.textContent];
+      if (!pre) return chatSend(b.textContent);
+      input.value = dash.draft = pre; grow(); input.focus(); input.setSelectionRange(pre.length, pre.length);
+    }));
+    $("#chat-new").onclick = () => { if (dash.busy) chatStop(); dash.session = null; dash.msgs = []; saveChat(); renderChat(); input.focus(); };
+    $("#chat-log").addEventListener("click", (e) => { const a = e.target.closest("[data-open]"); if (a) { e.preventDefault(); openLink(a.dataset.open); } });
+    renderChat(); renderUsage();
+    api("claude").then((c) => {
+      dash.available = c.available; if (c.usage) dash.usage = c.usage;
+      const tag = $("#model-tag");
+      if (tag) tag.textContent = [c.usage && c.usage.model ? modelName(c.usage.model) : "", c.version ? "Claude Code " + c.version : ""].filter(Boolean).join(" · ");
+      renderChat(); renderUsage();
+    }).catch(() => {});
+    await refreshPanels();
   },
 
   async search(params) {
@@ -746,7 +1281,7 @@ const views = {
       $("#new-form").onsubmit = async (e) => {
         e.preventDefault();
         const f = e.target;
-        try { const r = await api("note/create", { title: f.title.value, folder: f.folder.value }); prefs.set("mode", "edit"); location.hash = noteHref(r.path); }
+        try { const r = await api("note/create", { title: f.title.value, folder: f.folder.value }); prefs.set("mode", "edit"); explorer.loaded = 0; location.hash = noteHref(r.path); }
         catch (err) { toast(err.message, true); }
       };
     }
@@ -863,15 +1398,12 @@ const views = {
         (d.threads.length ? d.threads.map(threadItem).join("") : '<div class="empty">Threads are ongoing pieces of work (e.g. "thesis lit review") that Claude updates across sessions and devices.</div>') + "</section></div>";
   },
 
-  async health() {
+  async sync() {
     const [{ doctor: r, sync: s, embeddings: em }, recent] = await Promise.all([api("doctor"), api("recent?limit=15")]);
     const sec = (title, n, body, emptyText) => '<section class="card"><div class="card-h">' + title + ' <span class="n">' + n + "</span></div>" + (n ? body : '<div class="empty">' + emptyText + "</div>") + "</section>";
-    view.innerHTML = '<div class="page-title"><h1>Health</h1><span class="sub">Sync status and things worth fixing</span></div><div class="grid-2"><div class="stack">' +
-      sec("Missing link targets", r.unresolvedLinks.length, '<ul class="linklist">' + r.unresolvedLinks.map((u) => '<li><span><b>' + esc(u.target) + '</b> <span class="faint">×' + u.count + '</span><span class="sub-line">from ' + u.from.slice(0, 3).map((p) => '<a href="' + noteHref(p) + '">' + esc(p.split("/").pop().replace(/\.md$/, "")) + "</a>").join(", ") + (u.from.length > 3 ? " +" + (u.from.length - 3) : "") + "</span></span></li>").join("") + "</ul>", "Every link points to a real note.") +
-      sec("Ambiguous names", r.ambiguousNames.length, '<ul class="linklist">' + r.ambiguousNames.map((a) => "<li><span><b>" + esc(a.name) + "</b>" + a.paths.map((p) => '<span class="sub-line">' + esc(p) + "</span>").join("") + "</span></li>").join("") + "</ul>", "No two notes share a name.") +
-      sec("Frontmatter errors", r.frontmatterErrors.length, '<ul class="linklist">' + r.frontmatterErrors.map((e) => '<li><a href="' + noteHref(e.path) + '">' + esc(e.path) + '<span class="sub-line">' + esc(e.error) + "</span></a></li>").join("") + "</ul>", "All frontmatter parses.") +
-      sec("Empty notes", r.emptyNotes.length, '<ul class="linklist">' + r.emptyNotes.map((p) => '<li><a href="' + noteHref(p) + '">' + esc(p) + "</a></li>").join("") + "</ul>", "None.") +
-      '</div><div class="stack"><section class="card"><div class="card-h">Sync<span class="right"><button class="btn sm" id="sync-btn-2">Sync now</button></span></div><div class="card-b"><dl class="kv">' +
+    const issues = r.unresolvedLinks.length + r.ambiguousNames.length + r.frontmatterErrors.length + r.emptyNotes.length;
+    view.innerHTML = '<div class="page-title"><h1>Sync</h1><span class="sub">Your vault on GitHub, recent changes, and notes that need fixing</span></div><div class="grid-2"><div class="stack">' +
+      '<section class="card"><div class="card-h">Status<span class="right"><button class="btn sm" id="sync-btn-2">Sync now</button></span></div><div class="card-b"><dl class="kv">' +
         "<dt>Sync</dt><dd>" + (s.enabled ? "on" : '<span class="pill warn">off — run <code>brain init</code> on this folder to enable</span>') + "</dd>" +
         "<dt>Git repo</dt><dd>" + (s.repo ? "yes" : '<span class="pill danger">not a git repo</span>') + "</dd>" +
         "<dt>Remote</dt><dd>" + (s.remote ? "origin" : '<span class="pill warn">none — changes stay on this device</span>') + "</dd>" +
@@ -881,11 +1413,17 @@ const views = {
         "<dt>Uncommitted</dt><dd>" + s.dirty.length + " file" + (s.dirty.length === 1 ? "" : "s") + "</dd>" +
         "<dt>Last pull</dt><dd>" + (s.lastPull ? ago(s.lastPull) : "never") + "</dd>" +
         "<dt>Last push</dt><dd>" + (s.lastPush ? ago(s.lastPush) : "never") + "</dd></dl></div></section>" +
+      sec("Recent changes", recent.length, '<ul class="linklist">' + recent.map((e) => "<li><span>" + esc(e.subject.replace(/^\w+\([^)]*\):\s*/, "")) + '<span class="sub-line">' + esc(e.device || "outside the app") + " · " + ago(e.date) + "</span></span></li>").join("") + "</ul>", "No history yet.") +
+      '</div><div class="stack">' +
+      '<div class="section-label">Note checks' + (issues ? ' <span class="pill warn">' + issues + " to fix</span>" : ' <span class="pill ok">all good</span>') + "</div>" +
+      sec("Missing link targets", r.unresolvedLinks.length, '<ul class="linklist">' + r.unresolvedLinks.map((u) => '<li><span><b>' + esc(u.target) + '</b> <span class="faint">×' + u.count + '</span><span class="sub-line">from ' + u.from.slice(0, 3).map((p) => '<a href="' + noteHref(p) + '">' + esc(p.split("/").pop().replace(/\.md$/, "")) + "</a>").join(", ") + (u.from.length > 3 ? " +" + (u.from.length - 3) : "") + "</span></span></li>").join("") + "</ul>", "Every link points to a real note.") +
+      sec("Ambiguous names", r.ambiguousNames.length, '<ul class="linklist">' + r.ambiguousNames.map((a) => "<li><span><b>" + esc(a.name) + "</b>" + a.paths.map((p) => '<span class="sub-line">' + esc(p) + "</span>").join("") + "</span></li>").join("") + "</ul>", "No two notes share a name.") +
+      sec("Frontmatter errors", r.frontmatterErrors.length, '<ul class="linklist">' + r.frontmatterErrors.map((e) => '<li><a href="' + noteHref(e.path) + '">' + esc(e.path) + '<span class="sub-line">' + esc(e.error) + "</span></a></li>").join("") + "</ul>", "All frontmatter parses.") +
+      sec("Empty notes", r.emptyNotes.length, '<ul class="linklist">' + r.emptyNotes.map((p) => '<li><a href="' + noteHref(p) + '">' + esc(p) + "</a></li>").join("") + "</ul>", "None.") +
       '<section class="card"><div class="card-h">Semantic index</div><div class="card-b"><dl class="kv">' +
         "<dt>Model</dt><dd>" + (em.model ? esc(em.model) : '<span class="pill">off</span>') + "</dd>" +
         "<dt>Sections</dt><dd>" + em.embedded + " / " + em.total + " embedded" + (em.running ? ' <span class="pill accent">working…</span>' : "") + "</dd>" +
         (em.error ? '<dt>Problem</dt><dd><span class="pill danger">' + esc(em.error) + "</span></dd>" : "") + "</dl></div></section>" +
-      sec("Recent changes", recent.length, '<ul class="linklist">' + recent.map((e) => "<li><span>" + esc(e.subject.replace(/^\w+\([^)]*\):\s*/, "")) + '<span class="sub-line">' + esc(e.device || "outside the app") + " · " + ago(e.date) + "</span></span></li>").join("") + "</ul>", "No history yet.") +
       "</div></div>";
     $("#sync-btn-2").onclick = () => doSync($("#sync-btn-2"));
   },
@@ -1017,6 +1555,7 @@ async function route() {
   const [pathPart, query = ""] = hash.split("?");
   const params = new URLSearchParams(query);
   const [, name, ...rest] = pathPart.split("/");
+  if (name === "health") { location.replace("#/sync"); return; } // the page used to be called Health
   if (activeEditor) { const ae = activeEditor; activeEditor = null; try { await ae.flush(); } catch {} ae.destroy(); }
   if (seq !== routeSeq) return;
   let key = views[name] ? name : isGuest() ? "notes" : "today";
@@ -1024,6 +1563,7 @@ async function route() {
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.r === key || (key === "note" && a.dataset.r === "notes")));
   if (!view.innerHTML.trim() || key !== view.dataset.view) view.innerHTML = '<div class="loading">One moment…</div>';
   view.dataset.view = key;
+  document.body.dataset.view = key;
   try {
     await views[key](params, decodeURIComponent(rest.join("/")));
     if (seq === routeSeq) document.title = (key === "note" ? ($(".note-head h1")?.textContent || "Note") : key[0].toUpperCase() + key.slice(1)) + " · Shannote";
@@ -1115,6 +1655,7 @@ async function refreshCounts() {
     $(".brand").insertAdjacentHTML("beforeend", '<span class="pill" style="margin-left:4px">guest</span>');
   }
   await route();
+  loadExplorer(true);
   if (!isGuest()) { refreshCounts(); setInterval(refreshCounts, 30000); }
 })();
 </script>

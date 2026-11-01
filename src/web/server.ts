@@ -8,6 +8,8 @@ import { splitFrontmatter } from "../vault/edit.js";
 import { renderMarkdown } from "./render.js";
 import { loadEditor, loadFont, UI_HTML } from "./ui.js";
 import { findGuest, listGuests, type Guest } from "../share/spaces.js";
+import { claudeVersion, findClaude, loadUsage, probeUsage, runClaude, saveUsage, type ClaudeEvent, type ClaudeUsage } from "../agent/claude.js";
+import { usageHistory } from "../agent/usage.js";
 
 const MAX_BODY = 1_000_000;
 
@@ -61,6 +63,10 @@ export interface WebOptions {
   lanToken?: string;
   /** Guest links (scoped to one shared space). Defaults to this device's config. */
   guests?: () => Guest[];
+  /** The `claude` executable for dashboard chat; null turns chat off. Found on PATH by default. */
+  claudeBin?: string | null;
+  /** This app's CLI entry point, so Claude Code can start our MCP server. */
+  cliPath?: string;
 }
 
 /** What a guest may call. Everything else is refused. */
@@ -106,6 +112,9 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
   // Built from the real port once listening (port 0 means "pick one").
   let allowedHosts = new Set<string>();
   const by = `eric@${brain.device}`;
+  const claudeBin = opts.claudeBin === undefined ? findClaude() : opts.claudeBin;
+  let chat: { stop: () => void } | null = null;
+  let usage: ClaudeUsage | null = loadUsage();
 
   const server = createServer(async (req, res) => {
     try {
@@ -215,6 +224,56 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
 
         case "GET /api/status":
           return send(res, 200, await brain.status());
+
+        case "GET /api/projects":
+          return send(res, 200, await brain.projects(Number(q.get("limit") ?? 12)));
+
+        case "GET /api/claude":
+          return send(res, 200, { available: !!claudeBin, running: !!chat, usage, version: claudeBin ? await claudeVersion(claudeBin) : null });
+
+        case "GET /api/brief": {
+          const { scheduleStatus } = await import("../agent/schedule.js");
+          return send(res, 200, process.platform === "linux" ? scheduleStatus() : []);
+        }
+
+        case "POST /api/claude/usage/refresh": {
+          if (!claudeBin) return send(res, 503, { error: "Claude Code isn't installed (or isn't on PATH)." });
+          const fresh = await probeUsage(claudeBin);
+          if (!fresh) return send(res, 502, { error: "Claude Code didn't report your limits. Is it signed in?" });
+          usage = { ...fresh, model: usage?.model };
+          saveUsage(usage);
+          return send(res, 200, { usage });
+        }
+
+        case "GET /api/claude/usage":
+          return send(res, 200, await usageHistory(Math.min(90, Math.max(7, Number(q.get("days") ?? 30)))));
+
+        case "POST /api/claude": {
+          // Streams newline-delimited JSON events (see ClaudeEvent) until a done or error.
+          const b = await readJson(req);
+          const prompt = String(b.prompt ?? "").trim();
+          if (!prompt) throw new BrainError("Say something first", "invalid");
+          if (!claudeBin) return send(res, 503, { error: "Claude Code isn't installed (or isn't on PATH), so chat is off." });
+          if (chat) return send(res, 409, { error: "Claude is still answering the last message." });
+          const session = typeof b.session === "string" && /^[A-Za-z0-9][\w-]{7,63}$/.test(b.session) ? b.session : undefined;
+          res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+          const write = (e: ClaudeEvent) => {
+            if (e.type === "usage") { usage = { ...e.usage, model: usage?.model }; saveUsage(usage); }
+            if (e.type === "session" && e.model) { usage = { ...(usage ?? { at: new Date().toISOString() }), model: e.model }; saveUsage(usage); }
+            if (!res.writableEnded) res.write(`${JSON.stringify(e)}\n`);
+          };
+          const run = runClaude({ prompt, session, vault: brain.vault, node: process.execPath, cli: opts.cliPath ?? process.argv[1]!, bin: claudeBin, onEvent: write, calendarAdd: true });
+          chat = run;
+          // Closing the page (or the Stop button's abort) stops Claude too.
+          res.on("close", () => { if (!res.writableEnded) run.stop(); });
+          await run.done;
+          chat = null;
+          return res.end();
+        }
+
+        case "POST /api/claude/stop":
+          chat?.stop();
+          return send(res, 200, { ok: true });
 
         case "GET /api/today":
           return send(res, 200, await brain.today(q.get("date") ?? undefined).then((t) => ({

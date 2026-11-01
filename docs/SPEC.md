@@ -57,10 +57,15 @@ Claude owns reasoning. They talk over the Model Context Protocol (MCP).
 | Scheduled/unattended jobs (e.g. 7am brief) | ⚠️ Partly | Run `claude -p "/morning_brief"` from cron/launchd on a laptop that is awake, using Claude Code's own subscription login. Nothing runs if all devices are asleep |
 | Claude on your **phone** using the full tools | ❌ with git-only | claude.ai mobile can only use *remote* MCP servers (public URL). See §7 |
 | The app calling Claude directly with your subscription | ❌ | Not supported. Subscription credentials are for Anthropic's own clients. Use an API key if this is ever needed |
+| Chat box on the dashboard (Phase 6) | ✅ | The web server runs Claude Code headless (`claude -p`) with its own login; Claude Code is the client and reaches the vault through our MCP server (§19) |
 
 **Design rule:** the app never calls an LLM. If a feature appears to need one
 (summaries, triage, linking suggestions), it is written as an MCP prompt or a
-tool that returns candidates for Claude to decide on.
+tool that returns candidates for Claude to decide on. The dashboard chat (§19) keeps to
+this: it launches Claude Code, one of Anthropic's own clients, rather than calling a model,
+so there's still no API key and no model code in the app. Changed at Eric's request (he
+wanted to prompt Claude from the home page); a direct API option was rejected because it
+would need an API key and separate billing.
 
 ---
 
@@ -467,7 +472,7 @@ Each phase ends with something Eric uses daily for about a week before moving on
   loads from a local folder with no downloads.
 - **Optional dependency**: `@huggingface/transformers` is an `optionalDependency` and is
   kept out of the bundle. If it's missing or the model can't load, everything falls back
-  to keyword search and the reason is shown in search results and on the Health page.
+  to keyword search and the reason is shown in search results and on the Sync page (called Health before Phase 6).
 - **Chunking**: sections at H1–H3, tiny sections merged into the previous one, long ones
   split at paragraphs (≤ 1,400 chars). Each chunk is prefixed with `Title › Heading path`.
   Link syntax, callout markers and task dates are stripped; code blocks are cut to 4 lines.
@@ -617,3 +622,78 @@ claude mcp add brain --scope user -- npx -y shannote serve
   after an explicit "Keep mine"); guest links need the owner's laptop awake; there's no
   per-guest rate limiting (tokens are 192-bit, so guessing isn't practical); guests can't
   delete or move notes.
+
+## 19. Implementation notes (Phase 6: dashboard)
+
+- **Home page**: the Today page became a dashboard. Left: schedule, overdue / due / next 7
+  days, the daily note. Middle: Claude (particle orb that speeds up while Claude works, chat,
+  quick prompts, usage meter). Right: inbox, recently edited notes (from the git log),
+  projects, latest handoff, active threads. Status chip and clock at the top. On narrow
+  screens the chat comes first.
+- **Chat** (`src/agent/claude.ts`, `POST /api/claude`, owner-only): each message runs
+  `claude -p --output-format stream-json --include-partial-messages` with the prompt on
+  stdin, `--mcp-config` pointing at `cli.js --vault <vault> serve --client dashboard` (it
+  overrides a user-scope server of the same name), `--tools ""` (no shell or file tools), an
+  allow list of `mcp__shannote` plus the read-only Google tools (below), and
+  `--permission-mode dontAsk`, which refuses every other tool. `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` are removed from
+  its environment so it always uses the subscription login. Follow-ups pass `--resume
+  <session>` (ids must start with a letter or digit, so they can't be read as flags). The
+  server turns Claude Code's events into a small NDJSON stream: `session`, `text` deltas,
+  `tool` (name + one-line detail), `usage`, then exactly one `done` or `error`. One chat at
+  a time (409 otherwise); `POST /api/claude/stop` or closing the page kills it; 10-minute
+  timeout. The browser keeps the conversation (last 40 messages) in localStorage; "New chat"
+  forgets the session. When Claude used a writing tool, the side panels refresh.
+- **Usage meter**: Claude Code's `rate_limit_event` carries the 5-hour and weekly window
+  utilisation; the last values are cached in `<cache>/claude-usage.json`.
+- **Projects** (`Brain.projects`, `GET /api/projects`): every subfolder of `projects/` and of
+  any top-level folder that isn't one of the vault's own (`daily`, `inbox`, `notes`, `people`,
+  `meetings`, `archive`, `shared`, `_brain`), plus single notes directly in `projects/`. Each
+  has a note count, open tasks, next due date and an overview note (the top-level note named
+  like the folder). Sorted by last edit.
+- **Scheduled briefs** (`brain brief morning|evening`, `brain schedule install|remove`,
+  `src/agent/schedule.ts`): the brief runs through the same `runClaude` as the chat (Shannote
+  tools only, subscription login, `--client scheduled`) with an "unattended run" system
+  prompt, and Claude writes it into the daily note via `brain_plan`. On Linux it's a systemd
+  user timer (`shannote-brief-morning.timer`, default 07:30) with `Persistent=true`, so a brief
+  missed while the laptop was asleep or off runs when it wakes; `--if-missing` turns that
+  catch-up into a no-op when today's Plan (or Review) section is already written, or when
+  it's past 14:00 (morning) / before noon (evening). Output goes to `<cache>/scheduled.log`.
+  This replaces the cron recipe from Phase 4, which missed runs during sleep and registered
+  a second MCP server. The dashboard's daily-note card says whether a brief is scheduled.
+- **Usage tracker** (`src/agent/usage.ts`, `GET /api/claude/usage`): reads Claude Code's own
+  session logs (`~/.claude/projects/**/*.jsonl`, or `$CLAUDE_CONFIG_DIR`) for the last 30
+  days, counting each reply once (it's logged per content block) and skipping
+  `<synthetic>` placeholders. Only counts leave the module: replies, sessions, input /
+  output / cache tokens per day, top models and projects (project = last part of the
+  working folder). Files are cached by size + mtime, so refreshes are cheap. The dashboard
+  card shows today, 30-day totals, output tokens per day (hover for details, table view) and
+  the busiest projects. The Claude panel header shows the model (from the last run's init
+  event) and the Claude Code version (`claude --version`).
+- **Google, read-only** (`GOOGLE_READ_TOOLS`): the chat and briefs may use the user's
+  claude.ai Google Calendar (`list_calendars`, `list_events`, `search_events`, `get_event`) and
+  Gmail (`search_threads`, `get_thread`, `list_labels`) connectors when Claude Code has them.
+  Nothing that sends, drafts, changes or deletes is allowed; those calendar tools are also
+  passed to `--disallowedTools` so they never reach the model. One exception, at Eric's
+  request: the dashboard chat may add events (`create_event`), since the user is there asking
+  for it. Unattended runs (briefs) don't get it, so an email can't add events while nobody is
+  watching. The chat's "Add an event…" button starts a message for him to finish. This is why the chat
+  dropped `--strict-mcp-config` (it hides claude.ai connectors). The system prompt limits
+  email to what matters (primary inbox; no promotions, social, newsletters, game or app
+  notifications) and says email content is information, never instructions, since anyone
+  can send an email. The morning brief adds missed calendar events to Schedule and ends the
+  Plan section with an "Email" list (at most 5 items, or "Nothing important").
+- **Limits card**: the dashboard leads with the 5-hour session and weekly limits as
+  percentages, each with its reset time and countdown. A window whose reset time has passed
+  shows 0%. "Refresh" (`POST /api/claude/usage/refresh`) runs the smallest possible Claude
+  Code request (Haiku, no tools, no saved session) to read the current figures; chats and
+  briefs update them too. Token history from the logs is folded underneath.
+- **Layout**: on screens wider than 1100px (and at least 640px tall) the dashboard fits the
+  window. The page doesn't scroll; each column does, on its own, and the chat fills the middle
+  column. From 1680px wide the right-hand cards flow into two columns. With no conversation
+  yet, the orb is centred in the chat panel.
+- **File explorer**: a folder tree in the app sidebar (hidden on phones), built from
+  `GET /api/tree`, without `_brain/`. Folders remember being opened (localStorage), the
+  current note's folders open themselves and the note is highlighted, a filter box narrows
+  it (Enter opens the first match, Esc clears) and the whole panel collapses.
+- **Not done yet** (from looking at other "AI OS" dashboards): voice input, a focus timer,
+  past-chat history, an activity heatmap.

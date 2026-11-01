@@ -114,6 +114,8 @@ function clip(text: string, max: number): string {
 const PUSH_DEBOUNCE_MS = 10_000;
 const SAVE_COMMIT_DELAY_MS = 30_000;
 const ILLEGAL_NAME_CHARS = /[\\/:*?"<>|#^[\]]/g;
+/** Top-level folders the vault itself uses; anything else (like `uni/`) holds projects. */
+const VAULT_FOLDERS = new Set(["_brain", "daily", "inbox", "notes", "people", "meetings", "archive", SHARED_DIR]);
 
 export class Brain {
   readonly vault: string;
@@ -1377,6 +1379,51 @@ export class Brain {
       sessions: recentSessions(this.vault, 5),
       threads: listThreads(this.vault, "active"),
     };
+  }
+
+  /**
+   * What's being worked on, for the dashboard: each subfolder of `projects/` and of any
+   * other top-level folder that isn't one of the vault's own (e.g. `uni/MATH1001 Calculus`), plus
+   * single-note projects sitting directly in `projects/`. Most recently edited first.
+   */
+  async projects(limit = 12) {
+    await this.fresh();
+    const notes = this.db.prepare("SELECT path, title, mtime_ms FROM notes").all() as { path: string; title: string; mtime_ms: number }[];
+    const open = this.db
+      .prepare("SELECT path, due FROM tasks WHERE status IN ('todo','in_progress')")
+      .all() as { path: string; due: string | null }[];
+    const keyOf = (path: string) => {
+      const parts = path.split("/");
+      if (parts.length < 2 || VAULT_FOLDERS.has(parts[0]!)) return null;
+      if (parts.length === 2) return parts[0] === "projects" ? path : null; // loose notes in uni/ etc. aren't projects
+      return `${parts[0]}/${parts[1]}`;
+    };
+    const groups = new Map<string, { path: string; name: string; notes: number; updated: number; hub: string | null; openTasks: number; nextDue: string | null }>();
+    for (const n of notes) {
+      const key = keyOf(n.path);
+      if (!key) continue;
+      const single = key === n.path;
+      const g = groups.get(key) ?? { path: key, name: single ? n.title : key.split("/")[1]!, notes: 0, updated: 0, hub: single ? n.path : null, openTasks: 0, nextDue: null };
+      g.notes++;
+      g.updated = Math.max(g.updated, n.mtime_ms);
+      // The folder's overview note sits at its top level, usually named after it ("MATH1001 - Calculus").
+      if (!single && n.path.split("/").length === 3) {
+        const first = g.name.split(/\s+/)[0]!.toLowerCase();
+        const file = n.path.split("/")[2]!.toLowerCase();
+        if (!g.hub || (file.startsWith(first) && !g.hub.split("/")[2]!.toLowerCase().startsWith(first))) g.hub = n.path;
+      }
+      groups.set(key, g);
+    }
+    for (const t of open) {
+      const g = groups.get(keyOf(t.path) ?? "");
+      if (!g) continue;
+      g.openTasks++;
+      if (t.due && (!g.nextDue || t.due < g.nextDue)) g.nextDue = t.due;
+    }
+    return [...groups.values()]
+      .sort((a, b) => b.updated - a.updated)
+      .slice(0, limit)
+      .map((g) => ({ ...g, updated: new Date(g.updated).toISOString() }));
   }
 
   async syncNow() {

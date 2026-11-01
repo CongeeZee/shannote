@@ -22,6 +22,12 @@ it("creates the vault layout, templates and git repo", () => {
   expect(r.gitInitialised).toBe(true);
 });
 
+it("keeps code environments out of the vault's git repo", () => {
+  initVault(dir, { timezone: "Australia/Sydney" });
+  const ignore = readFileSync(join(dir, ".gitignore"), "utf8").split("\n");
+  for (const p of [".venv/", "venv/", "__pycache__/", "node_modules/"]) expect(ignore).toContain(p);
+});
+
 it("never overwrites existing files", () => {
   writeFileSync(join(dir, ".gitignore"), "mine\n");
   const r = initVault(dir);

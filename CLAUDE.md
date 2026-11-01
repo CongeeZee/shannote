@@ -11,7 +11,8 @@ separate private vault repo and must never be committed here (this repo is publi
 
 ## Rules
 - The app must never call an LLM API. Intelligence lives in MCP prompts run by
-  the client (SPEC §2.1).
+  the client (SPEC §2.1). The dashboard chat launches Claude Code as that client (SPEC §19);
+  don't add a model API call or an API key.
 - No personal data in fixtures, tests or docs. Use synthetic examples.
 - TypeScript strict, ESM, Node 22. Tests with vitest. Keep the `vault/` module
   pure (no I/O beyond what's injected) so it stays easy to test.
@@ -36,6 +37,7 @@ src/
   inbox.ts    inbox entry parsing · links.ts unlinked mentions · curate.ts triage/link prompts
   mcp/        MCP server (tools, resource, instructions)
   share/      shared spaces (shared/<slug>/ = own git repo) and guest links
+  agent/      dashboard chat: runs Claude Code headless (`claude -p`) with only our MCP tools
   web/        local web app: HTTP API, markdown rendering, ui.html (vanilla JS)
   web/editor/ CodeMirror editor (browser code, bundled by esbuild to dist/editor.js)
   app.ts      desktop launcher (.desktop / macOS .app) and app-mode window

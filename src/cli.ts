@@ -31,7 +31,12 @@ Usage:
                                         Read-only calendars from private iCal URLs
   brain plan morning|evening|weekly|meeting [--date D] [--event E]
                                         Print a planning prompt (what Claude gets)
-  brain schedule                        How to run the morning brief / evening review automatically
+  brain brief morning|evening [--if-missing]
+                                        Have Claude Code write today's brief/review now (subscription)
+  brain schedule                        Show scheduled briefs (or a cron line on other systems)
+  brain schedule install [--morning 07:30] [--evening HH:MM]
+                                        Run the brief daily (systemd timer; catches up after sleep)
+  brain schedule remove                 Stop scheduled briefs
 
 Sharing (each shared space is its own git repo under shared/; the rest of the vault stays private):
   brain share create <name> [--github]  New shared space (--github: make a private GitHub repo for it)
@@ -72,6 +77,7 @@ const { values, positionals } = parseArgs({
     event: { type: "string" },
     morning: { type: "string" },
     evening: { type: "string" },
+    "if-missing": { type: "boolean", default: false },
     help: { type: "boolean", short: "h", default: false },
   },
 });
@@ -267,26 +273,93 @@ async function main(): Promise<number> {
       return 0;
     }
 
+    case "brief": {
+      const kind = (args[0] ?? "morning") as "morning" | "evening";
+      if (kind !== "morning" && kind !== "evening") {
+        console.error("Usage: brain brief morning|evening [--if-missing]");
+        return 1;
+      }
+      const vault = resolveVault(values.vault);
+      const { readFileSync, existsSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      const { localDate } = await import("./util.js");
+      const { sectionOf } = await import("./plan/schedule.js");
+      const stamp = () => new Date().toLocaleString();
+      if (values["if-missing"]) {
+        // Catch-up runs after sleep: skip if it's already written, or if it's too late to be useful.
+        const daily = join(vault, "daily", `${localDate()}.md`);
+        const section = kind === "morning" ? "Plan" : "Review";
+        const written = existsSync(daily) && (sectionOf(readFileSync(daily, "utf8"), section) ?? "").trim().length > 0;
+        const hour = new Date().getHours();
+        const tooLate = kind === "morning" ? hour >= 14 : hour < 12;
+        if (written || tooLate) {
+          console.log(`[${stamp()}] ${kind}: skipped (${written ? `today's ${section} section is already written` : "too late in the day"})`);
+          return 0;
+        }
+      }
+      const { findClaude, runClaude, saveUsage, loadUsage, UNATTENDED } = await import("./agent/claude.js");
+      const bin = findClaude();
+      if (!bin) {
+        console.error(`[${stamp()}] ${kind}: Claude Code (claude) isn't installed or isn't on PATH.`);
+        return 1;
+      }
+      const prompt = kind === "morning"
+        ? `Run my morning brief: call brain_plan with kind morning and follow its instructions.
+If Google Calendar is connected, also list today's events from all my calendars and add any that brain_calendar missed to the Schedule section.
+If Gmail is connected, finish the Plan section with a "**Email**" list: at most 5 important emails from the last day that need me (who, what it's about, what I need to do), or "Nothing important". Skip promotions, newsletters and game or app notifications.`
+        : "Run my evening review: call brain_plan with kind evening and follow its instructions.";
+      let failed: string | null = null;
+      let text = "";
+      const usage = loadUsage();
+      await runClaude({
+        prompt, vault, bin, node: process.execPath, cli: process.argv[1]!, client: "scheduled", system: UNATTENDED(localDate()),
+        onEvent: (e) => {
+          if (e.type === "text") text += e.text;
+          else if (e.type === "tool") console.log(`[${stamp()}] ${kind}: ${e.name}${e.detail ? ` · ${e.detail}` : ""}`);
+          else if (e.type === "usage") saveUsage({ ...e.usage, model: usage?.model });
+          else if (e.type === "error") failed = e.message;
+        },
+      }).done;
+      if (failed) {
+        console.error(`[${stamp()}] ${kind}: failed: ${failed}`);
+        return 1;
+      }
+      console.log(`[${stamp()}] ${kind}: done. ${text.trim().replace(/\s*\n\s*/g, " ")}`);
+      return 0;
+    }
+
     case "schedule": {
-      const { spawnSync } = await import("node:child_process");
-      const claude = spawnSync("sh", ["-c", "command -v claude"], { encoding: "utf8" }).stdout.trim();
-      const [mh, mm] = (values.morning ?? "07:30").split(":");
-      const [eh, em] = (values.evening ?? "21:30").split(":");
-      const run = (kind: string) =>
-        `${claude || "/path/to/claude"} -p "Run my ${kind}: call brain_plan with kind ${kind === "morning brief" ? "morning" : "evening"} and follow its instructions. This is an unattended run, so don't ask questions." --allowedTools "mcp__brain__*"`;
-      console.log(`Scheduled planning uses Claude Code in headless mode, signed in with your subscription.
+      const { installSchedule, removeSchedule, scheduleStatus, parseTime } = await import("./agent/schedule.js");
+      const { cacheRoot } = await import("./config.js");
+      const { join } = await import("node:path");
+      const log = join(cacheRoot(), "scheduled.log");
+      if (args[0] === "install") {
+        const list: { kind: "morning" | "evening"; time: string }[] = [{ kind: "morning", time: parseTime(values.morning ?? "07:30") }];
+        if (values.evening) list.push({ kind: "evening", time: parseTime(values.evening) });
+        const vault = resolveVault(values.vault);
+        const done = installSchedule(list, { node: process.execPath, cli: process.argv[1]!, vault, log });
+        console.log(`Scheduled ${list.map((u) => `${u.kind === "morning" ? "morning brief" : "evening review"} at ${u.time}`).join(" and ")} (${done.join(", ")}).
+If the laptop is asleep or off then, it runs when it wakes up, unless the brief is already written
+or it's past 2pm (morning) / before noon (evening). Log: ${log}
+Each run uses a little of your Claude subscription. Undo with \`shannote schedule remove\`.`);
+        return 0;
+      }
+      if (args[0] === "remove") {
+        const removed = removeSchedule();
+        console.log(removed.length ? `Removed ${removed.join(", ")}.` : "No scheduled briefs were installed.");
+        return 0;
+      }
+      const status = process.platform === "linux" ? scheduleStatus() : [];
+      if (status.length) {
+        for (const s of status) console.log(`${s.kind === "morning" ? "Morning brief" : "Evening review"}: next ${s.next ?? "?"}${s.last ? `, last ran ${s.last}` : ""}`);
+        console.log(`Log: ${log}. Change times with \`shannote schedule install --morning HH:MM\`.`);
+        return 0;
+      }
+      const [mh, mm] = parseTime(values.morning ?? "07:30").split(":");
+      console.log(`No scheduled briefs yet.${process.platform === "linux" ? " Set one up with: shannote schedule install [--morning 07:30] [--evening 21:30]" : ""}
 
-1. Register the MCP server for Claude Code (once):
-   claude mcp add brain --scope user -- ${process.execPath} ${process.argv[1]} serve --client scheduled
-
-2. Add these lines with \`crontab -e\` (times are local; change with --morning HH:MM --evening HH:MM):
-   ${Number(mm)} ${Number(mh)} * * * ${run("morning brief")} >> ~/.cache/shannote/scheduled.log 2>&1
-   ${Number(em)} ${Number(eh)} * * * ${run("evening review")} >> ~/.cache/shannote/scheduled.log 2>&1
-
-Notes:
-- The laptop has to be awake at those times. Runs that are missed don't catch up.
-- Calendar events come from \`brain calendar add\`; headless runs can't use claude.ai connectors.
-- Each run uses part of your Claude usage allowance.${claude ? "" : "\n- `claude` wasn't found on your PATH. Install Claude Code first."}`);
+${process.platform === "linux" ? "Or, with" : "With"} cron (\`crontab -e\`; missed runs don't catch up):
+   ${Number(mm)} ${Number(mh)} * * * ${process.execPath} ${process.argv[1]} brief morning --if-missing >> ${log} 2>&1`);
       return 0;
     }
 

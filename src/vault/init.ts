@@ -26,6 +26,13 @@ const GITIGNORE = `.brain-cache/
 .obsidian/cache
 .trash/
 .DS_Store
+
+# Code environments and build output (never notes; a project folder may hold code)
+.venv/
+venv/
+__pycache__/
+*.pyc
+node_modules/
 `;
 
 export interface InitResult {
