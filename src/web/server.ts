@@ -253,7 +253,7 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
 
         case "GET /api/brief": {
           const { scheduleStatus } = await import("../agent/schedule.js");
-          return send(res, 200, process.platform === "linux" ? scheduleStatus() : []);
+          return send(res, 200, scheduleStatus());
         }
 
         case "POST /api/claude/usage/refresh": {
