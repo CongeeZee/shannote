@@ -366,7 +366,7 @@ Each run uses a little of your Claude subscription. Undo with \`shannote schedul
         console.log(removed.length ? `Removed ${removed.join(", ")}.` : "No scheduled briefs were installed.");
         return 0;
       }
-      const status = process.platform === "linux" ? scheduleStatus() : [];
+      const status = scheduleStatus();
       if (status.length) {
         for (const s of status) console.log(`${s.kind === "morning" ? "Morning brief" : "Evening review"}: next ${s.next ?? "?"}${s.last ? `, last ran ${s.last}` : ""}`);
         console.log(`Log: ${log}. Change times with \`shannote schedule install --morning HH:MM\`.`);
