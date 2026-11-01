@@ -432,7 +432,11 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1
 .tree .kids { padding-left: 16px; border-left: 1px dashed var(--border); margin-left: 22px; }
 .tree .n { margin-left: auto; color: var(--faint); font-size: 12px; font-weight: 700; }
 
-.kv { display: grid; grid-template-columns: 140px 1fr; gap: 8px 14px; font-size: 14.5px; }
+.kv { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px 14px; font-size: 14.5px; }
+.kv dd { overflow-wrap: anywhere; }
+/* A pill is normally a short status and must not wrap; as a key’s value it can be a
+   whole sentence, so there it does. */
+.kv dd .pill { white-space: normal; max-width: 100%; }
 .kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(6px); background: #3a2c22; color: #fbf3e6; padding: 10px 18px; border-radius: 14px; font-size: 14.5px; font-weight: 650; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 50; box-shadow: var(--shadow-lift); }
 :root[data-theme="dark"] .toast { background: #f0e5d6; color: #2a2019; }
@@ -479,12 +483,28 @@ body.guest .owner-only { display: none !important; }
   .task { padding: 10px 14px; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 12px 12px 8px; border-right: 0; border-bottom: 1px solid var(--border); }
   .brand { padding: 2px 6px 8px; font-size: 17px; } .brand-mark { width: 26px; height: 26px; } .side-foot, .explorer, .side-toggle { display: none; }
-  .nav { display: flex; gap: 4px; overflow-x: auto; width: 100%; scrollbar-width: none; }
-  .nav a { padding: 7px 12px; white-space: nowrap; font-size: 14px; } .nav .count { display: none; }
+  /* Wraps rather than scrolls sideways: a scrolling strip hid Tasks/Notes/Handoffs/Sync
+     off the right edge with nothing to show they were there. */
+  .nav { display: flex; flex-wrap: wrap; gap: 2px; width: 100%; }
+  .nav a { flex: 0 0 auto; padding: 7px 9px; gap: 5px; white-space: nowrap; font-size: 13.5px; } .nav .count { display: none; }
+  .nav a svg { width: 16px; height: 16px; }
+  /* The voice picker is as wide as its longest voice name, which pushed the speaker
+     button and "New chat" off the right edge of the card. */
+  .dash-core .card-h { flex-wrap: wrap; row-gap: 6px; }
+  .dash-core .card-h .right { min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
+  .voice-pick { max-width: 118px; min-width: 0; }
   .topbar { padding: 10px 14px; } .content { padding: 10px 14px 32px; }
   .kbd { display: none; }
   .note-body.editing { padding: 16px 14px 20px; }
   .ed-bar .hint { display: none; }
+}
+
+/* Touch: a few controls were under 32px tall, which is a poor target with a fingertip. */
+@media (pointer: coarse) {
+  .nav a { min-height: 40px; }
+  .btn.sm { min-height: 34px; }
+  input[type="date"] { min-height: 32px; }
+  input[type="checkbox"] { width: 20px; height: 20px; }
 }
 </style>
 </head>
