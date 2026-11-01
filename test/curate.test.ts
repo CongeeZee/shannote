@@ -156,7 +156,7 @@ describe("web app LAN mode", () => {
     expect((await get("/api/status", { host: "192.168.1.20:4567", cookie: "brain_token=wrong" })).status).toBe(401);
     const login = await get("/?token=secret-token-123", { host: "192.168.1.20:4567" });
     expect(login.status).toBe(302);
-    expect(String(login.headers["set-cookie"])).toMatch(/brain_token=secret-token-123; HttpOnly; SameSite=Strict/);
+    expect(String(login.headers["set-cookie"])).toMatch(/brain_token=secret-token-123; HttpOnly; SameSite=Lax/);
     const ok = await get("/api/status", { host: "192.168.1.20:4567", cookie: "brain_token=secret-token-123" });
     expect(ok.status).toBe(200);
     // Localhost still works without a token.
@@ -172,6 +172,53 @@ describe("web app LAN mode", () => {
       expect((await get("/api/status", { host: `localhost:${port}`, ...proxy })).status).toBe(401);
       expect((await get("/api/status", { host: `localhost:${port}`, cookie: "brain_token=secret-token-123", ...proxy })).status).toBe(200);
     }
+  });
+
+  it("bounces an app launch once through this origin, so the withheld cookie is sent", async () => {
+    // A home-screen launch is a top-level navigation the browser calls cross-site, and
+    // withholds the Lax cookie on it even though the cookie is in the jar.
+    const launch = await get("/", { host: "shannote.example.dev", "x-forwarded-for": "203.0.113.7", "sec-fetch-mode": "navigate", "sec-fetch-site": "cross-site" });
+    expect(launch.status).toBe(200);
+    expect(launch.body).toContain("location.replace");
+    expect(launch.body).toContain("shannote_retry"); // the guard that stops it looping
+
+    // Second time round, with the cookie the same-origin reload now carries: the app.
+    const withCookie = await get("/", { host: "shannote.example.dev", "x-forwarded-for": "203.0.113.7", "sec-fetch-mode": "navigate", cookie: "brain_token=secret-token-123" });
+    expect(withCookie.status).toBe(200);
+    expect(withCookie.body).toContain("Shannote");
+    expect(withCookie.body).not.toContain("shannote_retry");
+  });
+
+  it("stops bouncing and asks for the token when there really isn't a cookie", async () => {
+    const giveUp = await get("/?retry=1", { host: "shannote.example.dev", "x-forwarded-for": "203.0.113.7", "sec-fetch-mode": "navigate" });
+    expect(giveUp.status).toBe(401);
+    expect(giveUp.body).toContain("?token=");
+    expect(giveUp.body).not.toContain("location.replace");
+  });
+
+  it("never bounces a fetch, only a page load", async () => {
+    // An XHR can't run the script, so bouncing it would just hide the 401 from the app.
+    const xhr = await get("/api/status", { host: "shannote.example.dev", "x-forwarded-for": "203.0.113.7", "sec-fetch-mode": "cors" });
+    expect(xhr.status).toBe(401);
+    expect(xhr.body).not.toContain("location.replace");
+  });
+
+  it("clears the retry marker from the URL once the cookie arrives", async () => {
+    const r = await get("/?retry=1", { host: "shannote.example.dev", "x-forwarded-for": "203.0.113.7", "sec-fetch-mode": "navigate", cookie: "brain_token=secret-token-123" });
+    expect(r.status).toBe(302);
+    expect(r.headers.location).toBe("/#/today");
+  });
+
+  it("keeps the token cookie SameSite=Lax so the installed app can launch with it", async () => {
+    // Strict is withheld when the browser doesn't consider the navigation same-site, which
+    // is how a home-screen launch arrives: the app would ask for the token on every open.
+    const r = await get("/?token=secret-token-123", { host: "192.168.1.20:4567" });
+    const c = (r.headers["set-cookie"] as string[])[0]!;
+    expect(c).toContain("SameSite=Lax");
+    expect(c).not.toContain("SameSite=Strict");
+    expect(c).toContain("HttpOnly");
+    // Writes stay protected by the header a cross-site request can't set, not by SameSite.
+    expect((await get("/api/note/save", { host: "192.168.1.20:4567", cookie: "brain_token=secret-token-123" })).status).not.toBe(200);
   });
 
   it("marks the token cookie Secure when a tunnel relayed it over HTTPS", async () => {
