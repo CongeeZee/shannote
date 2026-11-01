@@ -10,6 +10,7 @@ import { loadEditor, loadFont, UI_HTML } from "./ui.js";
 import { findGuest, listGuests, type Guest } from "../share/spaces.js";
 import { claudeVersion, findClaude, loadUsage, probeUsage, runClaude, saveUsage, type ClaudeEvent, type ClaudeUsage } from "../agent/claude.js";
 import { usageHistory } from "../agent/usage.js";
+import { synthesize, ttsAvailable, ttsLoaded, VOICES, warmUp } from "../agent/tts.js";
 
 const MAX_BODY = 1_000_000;
 
@@ -262,13 +263,29 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
             if (e.type === "session" && e.model) { usage = { ...(usage ?? { at: new Date().toISOString() }), model: e.model }; saveUsage(usage); }
             if (!res.writableEnded) res.write(`${JSON.stringify(e)}\n`);
           };
-          const run = runClaude({ prompt, session, vault: brain.vault, node: process.execPath, cli: opts.cliPath ?? process.argv[1]!, bin: claudeBin, onEvent: write, calendarAdd: true });
+          const run = runClaude({ prompt, session, vault: brain.vault, node: process.execPath, cli: opts.cliPath ?? process.argv[1]!, bin: claudeBin, onEvent: write, calendarAdd: true, voice: b.voice === true });
           chat = run;
           // Closing the page (or the Stop button's abort) stops Claude too.
           res.on("close", () => { if (!res.writableEnded) run.stop(); });
           await run.done;
           chat = null;
           return res.end();
+        }
+
+        case "GET /api/tts":
+          return send(res, 200, { available: await ttsAvailable(), loaded: ttsLoaded(), voices: VOICES });
+
+        case "POST /api/tts/warm":
+          if (await ttsAvailable()) warmUp();
+          return send(res, 200, { ok: true });
+
+        case "POST /api/tts": {
+          // Claude's spoken reply, a sentence at a time, as WAV (local Kokoro model).
+          const b = await readJson(req);
+          if (!(await ttsAvailable())) return send(res, 503, { error: "The voice model isn't installed. Run `npm install` in the Shannote folder." });
+          const wav = await synthesize(String(b.text ?? ""), String(b.voice ?? ""));
+          res.writeHead(200, { "content-type": "audio/wav", "content-length": wav.length, "cache-control": "no-store" });
+          return res.end(wav);
         }
 
         case "POST /api/claude/stop":

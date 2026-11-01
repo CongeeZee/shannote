@@ -109,10 +109,20 @@ describe("dashboard chat (Claude Code)", () => {
     const denied = args[args.indexOf("--disallowedTools") + 1]!.split(",");
     expect(denied).toEqual(expect.arrayContaining(["mcp__claude_ai_Google_Calendar__update_event", "mcp__claude_ai_Google_Calendar__delete_event"]));
     expect(denied).not.toContain("mcp__claude_ai_Google_Calendar__create_event");
+    expect(denied).toEqual(expect.arrayContaining(["mcp__claude_ai_Gmail__send_message", "mcp__claude_ai_Gmail__reply", "mcp__claude_ai_Gmail__forward", "mcp__claude_ai_Gmail__trash_thread"]));
     expect(args[args.indexOf("--permission-mode") + 1]).toBe("dontAsk");
     const mcp = JSON.parse(args[args.indexOf("--mcp-config") + 1]!);
     expect(mcp.mcpServers.shannote.args).toEqual(["/opt/shannote/cli.js", "--vault", t.pathA, "serve", "--client", "dashboard"]);
     expect(args).not.toContain("hi"); // the prompt goes in on stdin
+  });
+
+  it("asks for short spoken answers when the question was spoken", async () => {
+    const sys = async (body: object) => {
+      const args: string[] = JSON.parse(events((await http("/api/claude", body)).text).filter((e) => e.type === "text").at(-1).text).args;
+      return args[args.indexOf("--append-system-prompt") + 1]!;
+    };
+    expect(await sys({ prompt: "hi", voice: true })).toContain("read aloud");
+    expect(await sys({ prompt: "hi" })).not.toContain("read aloud");
   });
 
   it("continues a conversation with --resume", async () => {
@@ -226,5 +236,25 @@ describe("scheduled briefs", () => {
     expect(u.timer).toContain("Persistent=true");
     expect(u.service).toContain('ExecStart=/usr/bin/node "/opt/my app/cli.js" --vault /home/x/vault brief morning --if-missing');
     expect(u.service).toContain("StandardOutput=append:/tmp/s.log");
+  });
+});
+
+describe("Claude's voice (Kokoro)", () => {
+  it("encodes Kokoro's samples as 16-bit mono WAV", async () => {
+    const { toWav } = await import("../src/agent/tts.js");
+    const wav = toWav(new Float32Array([0, 1, -1, 2, 0.5]), 24000);
+    expect(wav.toString("ascii", 0, 4)).toBe("RIFF");
+    expect(wav.toString("ascii", 8, 12)).toBe("WAVE");
+    expect(wav.readUInt16LE(22)).toBe(1); // mono
+    expect(wav.readUInt32LE(24)).toBe(24000);
+    expect(wav.readUInt16LE(34)).toBe(16);
+    expect(wav.readUInt32LE(40)).toBe(10);
+    expect([0, 1, 2, 3, 4].map((i) => wav.readInt16LE(44 + i * 2))).toEqual([0, 32767, -32767, 32767, 16384]); // clipped, scaled
+  });
+
+  it("offers a British male and a British female voice", async () => {
+    const r = JSON.parse((await http("/api/tts")).text);
+    expect(r.voices.map((v: { id: string }) => v.id)).toEqual(["bm_fable", "bf_emma"]);
+    expect(typeof r.available).toBe("boolean");
   });
 });

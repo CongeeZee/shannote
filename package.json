@@ -12,7 +12,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsup src/cli.ts --format esm --clean --external @huggingface/transformers && npm run build:editor && cp src/web/ui.html dist/ui.html && cp -r src/web/fonts dist/fonts",
+    "build": "tsup src/cli.ts --format esm --clean --external @huggingface/transformers --external kokoro-js && npm run build:editor && cp src/web/ui.html dist/ui.html && cp -r src/web/fonts dist/fonts",
     "dev": "tsx src/cli.ts",
     "web": "tsx src/cli.ts web --open",
     "test": "vitest run",
@@ -45,6 +45,12 @@
     "zod": "^4.6.7"
   },
   "optionalDependencies": {
-    "@huggingface/transformers": "^4.3.1"
+    "@huggingface/transformers": "^4.3.1",
+    "kokoro-js": "^1.2.1"
+  },
+  "overrides": {
+    "kokoro-js": {
+      "@huggingface/transformers": "^4.3.1"
+    }
   }
 }

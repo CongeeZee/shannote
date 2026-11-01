@@ -695,5 +695,30 @@ claude mcp add brain --scope user -- npx -y shannote serve
   `GET /api/tree`, without `_brain/`. Folders remember being opened (localStorage), the
   current note's folders open themselves and the note is highlighted, a filter box narrows
   it (Enter opens the first match, Esc clears) and the whole panel collapses.
-- **Not done yet** (from looking at other "AI OS" dashboards): voice input, a focus timer,
-  past-chat history, an activity heatmap.
+- **Voice**: dictation uses the browser's speech recognition (Chrome sends the audio to
+  Google to transcribe; the app window runs in Chrome). The mic button, or `m` on the
+  dashboard, fills the box as you talk and sends when you stop. A spoken question passes
+  `voice: true`, which asks Claude for one to three short spoken sentences. Replies to
+  spoken questions (and all replies, with the speaker toggle) are read aloud by
+  `speechSynthesis` a sentence at a time as they stream in, with markdown, code and file
+  paths turned into plain speech; the voice can be picked and is remembered. Esc or clicking
+  the orb stops it.
+- **Shannote voices** (`src/agent/tts.ts`, `GET|POST /api/tts`, `POST /api/tts/warm`): the
+  default voices are Kokoro-82M via `kokoro-js` (optional dependency, overridden to share
+  our `@huggingface/transformers` v4 instead of pulling its own 700 MB runtime), run on this
+  computer: **Fable** (`bm_fable`, British male, the usual "Jarvis" pick) and **Emma**
+  (`bf_emma`, British female). The `q4` model (~290 MB, downloaded once into the model
+  cache) is the fastest on CPU, about 1.2× real time with all cores (`q8` was 3× slower);
+  it loads into the web server's memory on first use, and the dashboard warms it up when you
+  reach for the mic or speaker. Each sentence is requested as soon as it's complete, the
+  server makes them one at a time, and the page plays them back to back through Web Audio,
+  driving the orb from the playback level. If the model can't load, speech falls back to
+  the browser's voices. Speech synthesis isn't an LLM, so SPEC §2.1 still holds; no account,
+  key or network after the first download.
+- **Orb**: about 1,500 particles (a denser shell plus a softer core) on an unevenly
+  waving surface, with a few bright "stars" and faint threads between nearby bright ones.
+  Its energy follows Claude's state (idle drift, churning while thinking, the mic level
+  while listening, a pulse per spoken word). Dark themes draw additive glowing dots; light
+  themes draw crisp ones normally. Reduced motion slows it to an occasional redraw.
+- **Not done yet** (from looking at other "AI OS" dashboards): a focus timer, past-chat
+  history, an activity heatmap.

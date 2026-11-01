@@ -301,6 +301,18 @@ body[data-view="today"] .content { max-width: none; }
 .msg .cursor { display: inline-block; width: 7px; height: 1em; vertical-align: -2px; background: var(--accent); animation: blink 1s steps(2) infinite; margin-left: 2px; }
 .chat-empty { margin: auto 0; text-align: center; color: var(--faint); font-size: 14px; padding: 8px 0 14px; }
 .chat-form { display: flex; gap: 8px; align-items: flex-end; padding: 10px 14px 6px; border-top: 1px solid var(--border); }
+.mic { all: unset; flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; color: var(--muted); border: 1px solid var(--border); background: var(--panel-2); transition: background .15s, color .15s; }
+.mic svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.mic:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.mic.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); animation: micpulse 1.4s ease-in-out infinite; }
+.mic:disabled { opacity: .45; cursor: default; }
+@keyframes micpulse { 50% { box-shadow: 0 0 0 7px var(--accent-soft); } }
+.btn.icon { padding: 4px 7px; display: inline-grid; place-items: center; }
+.btn.icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+#voice-toggle.on { color: var(--accent); background: var(--accent-soft); }
+.voice-pick { font: inherit; font-size: 12px; max-width: 170px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 2px 4px; }
+.voice-pick:hover, .voice-pick:focus { border-color: var(--border-strong); background: var(--panel); outline: none; }
+.orb { cursor: default; }
 .chat-form textarea { flex: 1; resize: none; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 12px; padding: 9px 12px; font: inherit; font-size: 15px; line-height: 1.45; max-height: 9.5em; outline: none; }
 .chat-form textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .quick { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; padding: 4px 14px 8px; }
@@ -884,11 +896,13 @@ function renderChat() {
       : '<div class="chat-empty">' + (dash.available ? "Ask about your notes, plans and tasks.<br>Claude can read and update them." : "Chat needs Claude Code installed on this computer (<code>claude</code> on your PATH).") + "</div>";
     if (stick) log.scrollTop = log.scrollHeight;
     const core = $(".dash-core"); if (core) core.classList.toggle("has-chat", dash.msgs.length > 0);
-    const state = !dash.available ? ["off", "Offline"] : dash.busy === "answering" ? ["busy", "Answering"] : dash.busy ? ["busy", "Thinking"] : ["idle", "Idle"];
+    const state = !dash.available ? ["off", "Offline"] : voice.listening ? ["busy", "Listening"] : dash.busy === "answering" ? ["busy", "Answering"] : dash.busy ? ["busy", "Thinking"] : voice.speaking ? ["busy", "Speaking"] : ["idle", "Idle"];
     const chip = $("#claude-chip"); if (chip) { chip.className = "chip " + state[0]; chip.lastChild.textContent = "Claude · " + state[1]; }
     const st = $(".orb-state"); if (st) st.textContent = state[1];
     const send = $("#chat-send"); if (send) { send.textContent = dash.busy ? "Stop" : "Send"; send.classList.toggle("primary", !dash.busy); send.disabled = !dash.available; }
     document.querySelectorAll(".quick button").forEach((b) => (b.disabled = !!dash.busy || !dash.available));
+    const mic = $("#chat-mic"); if (mic) { mic.classList.toggle("on", voice.listening); mic.disabled = !dash.available || (!!dash.busy && !voice.listening); mic.title = voice.listening ? "Stop listening" : "Speak to Claude (m)"; }
+    const spk = $("#voice-toggle"); if (spk) { spk.classList.toggle("on", voice.always); spk.setAttribute("aria-pressed", String(voice.always)); }
   });
 }
 
@@ -902,17 +916,18 @@ function renderUsage() {
   el.innerHTML = bar("Session", u.fiveHour) + bar("Week", u.sevenDay);
 }
 
-async function chatSend(prompt) {
+async function chatSend(prompt, opts = {}) {
   prompt = prompt.trim();
   if (!prompt || dash.busy || !dash.available) return;
-  const m = { role: "claude", text: "", tools: [] };
+  stopSpeaking();
+  const m = { role: "claude", text: "", tools: [], speak: !!opts.voice || voice.always };
   dash.msgs.push({ role: "user", text: prompt }, m);
   dash.busy = "thinking"; dash.wrote = false;
   dash.ctrl = new AbortController();
   renderChat();
   const onEvent = (e) => {
     if (e.type === "session") { dash.session = e.id; const tag = $("#model-tag"); if (e.model && tag && !tag.textContent.startsWith(modelName(e.model))) tag.textContent = modelName(e.model) + (tag.textContent.includes("Claude Code") ? " · " + tag.textContent.slice(tag.textContent.indexOf("Claude Code")) : ""); }
-    else if (e.type === "text") { m.text += e.text; dash.busy = "answering"; }
+    else if (e.type === "text") { m.text += e.text; dash.busy = "answering"; if (m.speak) speakAsItArrives(m, false); }
     else if (e.type === "tool") { m.tools.push(e); dash.busy = "thinking"; if (WRITE_TOOLS.has(e.name)) dash.wrote = true; }
     else if (e.type === "usage") { dash.usage = e.usage; renderUsage(); }
     else if (e.type === "done") { if (e.session) dash.session = e.session; }
@@ -920,7 +935,7 @@ async function chatSend(prompt) {
     renderChat();
   };
   try {
-    const res = await fetch("/api/claude", { method: "POST", headers: { "content-type": "application/json", "x-brain": "1" }, body: JSON.stringify({ prompt, session: dash.session }), signal: dash.ctrl.signal });
+    const res = await fetch("/api/claude", { method: "POST", headers: { "content-type": "application/json", "x-brain": "1" }, body: JSON.stringify({ prompt, session: dash.session, voice: !!opts.voice }), signal: dash.ctrl.signal });
     if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || res.statusText); }
     const reader = res.body.getReader(), dec = new TextDecoder();
     let buf = "";
@@ -935,47 +950,267 @@ async function chatSend(prompt) {
     m.error = e.name === "AbortError" ? "Stopped." : e.message;
   }
   if (!m.text && !m.error) m.error = "No answer came back.";
+  if (m.speak && !m.error) speakAsItArrives(m, true);
+  delete m.speak; delete m.spoken;
   dash.busy = false; dash.ctrl = null;
   saveChat(); renderChat();
   if (dash.wrote) { refreshCounts(); loadExplorer(true); if (view.dataset.view === "today") refreshPanels(); }
 }
 function chatStop() { if (dash.ctrl) dash.ctrl.abort(); api("claude/stop", {}).catch(() => {}); }
 
-/** Particle sphere in the accent colour. It spins faster while Claude works; still for reduced motion. */
-function startOrb(canvas) {
-  const N = 520, pts = [];
-  for (let i = 0; i < N; i++) {
-    const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = i * Math.PI * (3 - Math.sqrt(5));
-    pts.push([Math.cos(th) * r, y, Math.sin(th) * r, 0.6 + Math.random() * 0.8]);
+// ---------------------------------------------------------------- voice
+// Dictation with the browser's speech recognition (Chrome sends the audio to Google to
+// transcribe), and replies read aloud with speechSynthesis. No AI calls in the app.
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+const voice = { rec: null, listening: false, speaking: 0, level: 0, pulse: 0, audio: null, always: prefs.get("speak", "0") === "1", voiceName: prefs.get("voice", ""), kokoro: null };
+/** Shannote's own voices (Kokoro, generated on this computer) are named "kokoro:<id>" in the picker. */
+const kokoroId = () => {
+  if (!voice.kokoro || !voice.kokoro.available) return null;
+  if (voice.voiceName.startsWith("kokoro:")) return voice.voiceName.slice(7);
+  return voice.voiceName ? null : voice.kokoro.voices[0].id; // default: Fable
+};
+const warmVoice = () => { if (kokoroId() && !voice.kokoro.loaded) { voice.kokoro.loaded = true; api("tts/warm", {}).catch(() => {}); } };
+
+function voices() {
+  const all = (window.speechSynthesis ? speechSynthesis.getVoices() : []).filter((v) => /^en(-|_|$)/i.test(v.lang));
+  const score = (v) => (/google/i.test(v.name) ? 4 : 0) + (/natural|neural|online/i.test(v.name) ? 3 : 0) + (v.lang.replace("_", "-") === (navigator.language || "") ? 2 : 0) + (v.localService ? 0 : 1);
+  return all.sort((a, b) => score(b) - score(a));
+}
+const pickVoice = () => { const vs = voices(); return vs.find((v) => v.name === voice.voiceName) || vs[0] || null; };
+
+/** What Claude wrote, as something worth hearing: no markdown, code, or file paths. */
+function speakable(text) {
+  return text
+    .replace(/```[\s\S]*?(```|$)/g, " ")
+    .replace(/`([^`]+?)\.md`/g, (_, p) => p.split("/").pop())
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, t, a) => a || t.split("/").pop())
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^\s*(#+|[-*+]|\d+[.)])\s+/gm, "")
+    .replace(/[*_~|>#]/g, "")
+    .replace(/\s+/g, " ").trim();
+}
+
+function speak(text) {
+  const t = speakable(text);
+  if (!t) return;
+  const k = kokoroId();
+  if (k) return speakKokoro(t, k);
+  if (!window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(t);
+  const v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; }
+  u.rate = 1.04;
+  u.onstart = () => { voice.speaking++; renderChat(); };
+  u.onboundary = () => { voice.pulse = 1; };
+  u.onend = u.onerror = () => { voice.speaking = Math.max(0, voice.speaking - 1); renderChat(); };
+  speechSynthesis.speak(u); // queued: sentences play one after another
+}
+function stopSpeaking() {
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  kq.gen++; kq.items = [];
+  if (kq.source) { try { kq.source.stop(); } catch {} kq.source = null; }
+  voice.speaking = 0; renderChat();
+}
+
+// Kokoro playback: every sentence is requested straight away (the server makes them in order),
+// and each plays as soon as the one before it ends, so later sentences are ready in time.
+const kq = { items: [], playing: false, ctx: null, source: null, gen: 0, warned: false };
+function speakKokoro(text, id) {
+  kq.items.push({ text, audio: fetch("/api/tts", { method: "POST", headers: { "content-type": "application/json", "x-brain": "1" }, body: JSON.stringify({ text, voice: id }) })
+    .then((r) => (r.ok ? r.arrayBuffer() : r.json().then((j) => Promise.reject(new Error(j.error || r.statusText))))) });
+  voice.speaking = kq.items.length + (kq.playing ? 1 : 0);
+  renderChat();
+  if (!kq.playing) playKokoro(kq.gen);
+}
+async function playKokoro(gen) {
+  kq.playing = true;
+  while (kq.items.length && gen === kq.gen) {
+    const item = kq.items.shift();
+    let data;
+    try { data = await item.audio; } catch (e) {
+      // Voice model unavailable: say it with the browser's voice instead.
+      if (!kq.warned) { kq.warned = true; toast("Shannote voice unavailable (" + e.message + "); using the browser's voice.", true); }
+      if (gen === kq.gen && window.speechSynthesis) speechSynthesis.speak(new SpeechSynthesisUtterance(item.text));
+      continue;
+    }
+    if (gen !== kq.gen) break;
+    const ctx = (kq.ctx ||= new AudioContext());
+    if (ctx.state === "suspended") await ctx.resume();
+    const buffer = await ctx.decodeAudioData(data);
+    const src = ctx.createBufferSource(), an = ctx.createAnalyser();
+    an.fftSize = 512; src.buffer = buffer; src.connect(an); an.connect(ctx.destination);
+    kq.source = src;
+    const wave = new Uint8Array(an.fftSize);
+    const meter = () => { // drive the orb from how loud the speech is right now
+      if (kq.source !== src) return;
+      an.getByteTimeDomainData(wave);
+      let sum = 0; for (const b of wave) sum += ((b - 128) / 128) ** 2;
+      voice.pulse = Math.max(voice.pulse, Math.min(1, Math.sqrt(sum / wave.length) * 4));
+      requestAnimationFrame(meter);
+    };
+    voice.speaking = kq.items.length + 1; renderChat();
+    await new Promise((resolve) => { src.onended = resolve; src.start(); meter(); });
+    if (kq.source === src) kq.source = null;
   }
+  kq.playing = false;
+  if (gen === kq.gen) { voice.speaking = 0; renderChat(); }
+}
+
+/** Reads a streaming reply aloud a sentence at a time, so speech starts before the answer ends. */
+function speakAsItArrives(m, final) {
+  const rest = m.text.slice(m.spoken || 0);
+  const re = /[\s\S]*?(?:[.!?](?=\s)|\n\n)/g;
+  let match, upto = 0;
+  if (!final) while ((match = re.exec(rest)) && match[0]) upto = re.lastIndex;
+  else upto = rest.length;
+  if (!upto) return;
+  speak(rest.slice(0, upto));
+  m.spoken = (m.spoken || 0) + upto;
+}
+
+async function micLevel(on) {
+  if (!on) { if (voice.audio) { voice.audio.stream.getTracks().forEach((t) => t.stop()); voice.audio.ctx.close(); voice.audio = null; } voice.level = 0; return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ctx = new AudioContext(), an = ctx.createAnalyser();
+    an.fftSize = 512; ctx.createMediaStreamSource(stream).connect(an);
+    const buf = new Uint8Array(an.fftSize);
+    voice.audio = { stream, ctx };
+    const tick = () => {
+      if (!voice.audio || voice.audio.ctx !== ctx) return;
+      an.getByteTimeDomainData(buf);
+      let sum = 0; for (const b of buf) sum += ((b - 128) / 128) ** 2;
+      voice.level = Math.min(1, Math.sqrt(sum / buf.length) * 5);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  } catch { /* level is just for the orb */ }
+}
+
+function toggleListening() {
+  if (voice.listening) { voice.rec && voice.rec.stop(); return; }
+  warmVoice();
+  if (!SpeechRec) return toast("Voice input needs Chrome or Edge.", true);
+  if (dash.busy || !dash.available) return;
+  stopSpeaking();
+  const input = $("#chat-in");
+  const before = input ? input.value.trim() : "";
+  let finalText = "";
+  const rec = new SpeechRec();
+  rec.lang = navigator.language || "en-AU";
+  rec.interimResults = true;
+  rec.continuous = false;
+  rec.onresult = (e) => {
+    let interim = ""; finalText = "";
+    for (const r of e.results) (r.isFinal ? (finalText += r[0].transcript) : (interim += r[0].transcript));
+    const el = $("#chat-in"); if (el) { el.value = [before, finalText + interim].filter(Boolean).join(" "); el.dispatchEvent(new Event("input")); }
+  };
+  rec.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") toast("Microphone access is blocked for Shannote. Allow it in the browser's site settings.", true);
+    else if (e.error === "network") toast("Voice input needs an internet connection (Chrome transcribes speech online).", true);
+    else if (e.error !== "no-speech" && e.error !== "aborted") toast("Voice input: " + e.error, true);
+  };
+  rec.onend = () => {
+    voice.listening = false; voice.rec = null; micLevel(false); renderChat();
+    const el = $("#chat-in"), text = el ? el.value.trim() : [before, finalText].filter(Boolean).join(" ");
+    if (finalText.trim() && text) { if (el) { el.value = dash.draft = ""; el.dispatchEvent(new Event("input")); } chatSend(text, { voice: true }); }
+  };
+  voice.rec = rec; voice.listening = true;
+  rec.start(); micLevel(true); renderChat();
+}
+
+// ---------------------------------------------------------------- the orb
+// A glowing cloud of particles, denser at the core and the surface, that drifts in a slowly
+// changing flow. It churns while Claude thinks, follows your voice while listening, and
+// pulses with each word when Claude speaks. Colour is the theme's accent.
+function startOrb(canvas) {
+  const N = 1500, pts = [];
+  for (let i = 0; i < N; i++) {
+    const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+    const shell = Math.random() < 0.62;
+    pts.push({
+      x: s * Math.cos(th), y: u, z: s * Math.sin(th),
+      r: shell ? 0.84 + Math.random() * 0.17 : Math.pow(Math.random(), 0.55) * 0.82, // shell + softer core
+      size: Math.random() < 0.06 ? 1.8 + Math.random() * 1.6 : 0.5 + Math.random() * 0.9, // a few bright stars
+      glow: Math.random(), phase: Math.random() * 6.283, spin: 0.6 + Math.random() * 0.8,
+    });
+  }
+  const sprite = document.createElement("canvas"); sprite.width = sprite.height = 32;
+  let spriteKey = "";
+  // Dark themes: soft glowing dots that add up to light. Light themes: crisp dots drawn normally
+  // (adding colour on a pale page just looks muddy).
+  const paintSprite = (color, light) => {
+    const g = sprite.getContext("2d"), gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    gr.addColorStop(0, color); gr.addColorStop(light ? 0.4 : 0.25, color); gr.addColorStop(light ? 0.62 : 1, "transparent");
+    g.clearRect(0, 0, 32, 32); g.globalAlpha = 1; g.fillStyle = gr; g.fillRect(0, 0, 32, 32);
+    spriteKey = color + light;
+  };
+  const isLight = () => {
+    const m = getComputedStyle(document.body).backgroundColor.match(/\d+/g);
+    return !!m && (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255 > 0.55;
+  };
   const ctx = canvas.getContext("2d");
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let angle = 0, speed = 0.15, pulse = 0, last = performance.now();
+  let t = Math.random() * 100, energy = 0.2, last = performance.now();
+  const proj = new Float32Array(N * 4);
   const frame = (now) => {
     if (!canvas.isConnected) return;
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     const dpr = devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return requestAnimationFrame(frame);
     if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
-    const target = dash.busy === "thinking" ? 1.1 : dash.busy ? 0.6 : 0.15;
-    speed += (target - speed) * Math.min(1, dt * 3);
-    angle += speed * dt; pulse += dt * (dash.busy ? 5 : 1.2);
     const color = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#d9a26f";
+    const light = isLight();
+    if (color + light !== spriteKey) paintSprite(color, light);
+    const target = voice.listening ? 0.55 + voice.level * 1.4 : dash.busy === "thinking" ? 1.25 : dash.busy ? 0.8 : voice.speaking ? 0.6 + voice.pulse * 0.9 : 0.22;
+    energy += (target - energy) * Math.min(1, dt * 4);
+    voice.pulse *= Math.pow(0.02, dt);
+    t += dt * (0.35 + energy * 0.9);
+    const R = Math.min(w, h) * 0.4, small = w < 140, step = small ? 3 : 1, k = Math.max(1, R / 92); // particles grow with the orb
+    const turb = 0.06 + energy * 0.15, rot = t * 0.35, cr = Math.cos(rot), sr = Math.sin(rot), tilt = 0.4, ct = Math.cos(tilt), st = Math.sin(tilt);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const R = Math.min(w, h) * 0.42 * (1 + (dash.busy ? 0.035 : 0.015) * Math.sin(pulse));
-    const ca = Math.cos(angle), sa = Math.sin(angle), tilt = 0.35, ct = Math.cos(tilt), st = Math.sin(tilt);
-    ctx.fillStyle = color;
-    for (const [x0, y0, z0, s] of pts) {
-      const x = x0 * ca + z0 * sa, z1 = -x0 * sa + z0 * ca;
-      const y = y0 * ct - z1 * st, z = y0 * st + z1 * ct;
-      const depth = (z + 1) / 2;
-      ctx.globalAlpha = 0.12 + depth * 0.78;
-      const size = (0.5 + depth * 1.3) * s;
-      ctx.fillRect(w / 2 + x * R - size / 2, h / 2 + y * R - size / 2, size, size);
+    ctx.globalCompositeOperation = light ? "source-over" : "lighter";
+    const core = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, R * 0.9);
+    core.addColorStop(0, color); core.addColorStop(1, "transparent");
+    ctx.globalAlpha = (light ? 0.05 : 0.07) + energy * 0.06; ctx.fillStyle = core; ctx.fillRect(0, 0, w, h);
+    let n = 0;
+    for (let i = 0; i < N; i += step) {
+      const p = pts[i];
+      // Layered waves make an uneven, slowly morphing surface rather than a perfect ball.
+      const wave = Math.sin(p.x * 3.1 + t * 1.3 + p.phase) * Math.cos(p.y * 2.7 - t * 0.9) + 0.6 * Math.sin(p.z * 4.3 + t * 1.7) + 0.35 * Math.sin((p.x + p.y) * 6 - t * 2.3 + p.phase);
+      const rr = p.r * (1 + turb * wave + voice.pulse * 0.08 * Math.sin(p.phase + t * 8));
+      const a = rot * p.spin * 0.25 + p.phase * 0.02; // inner particles swirl at their own pace
+      const ca = Math.cos(a), sa = Math.sin(a);
+      let x = (p.x * ca - p.z * sa) * rr, z = (p.x * sa + p.z * ca) * rr, y = p.y * rr;
+      const x2 = x * cr + z * sr; z = -x * sr + z * cr; x = x2;
+      const y2 = y * ct - z * st; z = y * st + z * ct; y = y2;
+      const persp = 2.6 / (2.6 + z);
+      proj[n * 4] = w / 2 + x * R * persp; proj[n * 4 + 1] = h / 2 + y * R * persp;
+      proj[n * 4 + 2] = (z + 1.2) / 2.4; proj[n * 4 + 3] = i;
+      n++;
     }
-    ctx.globalAlpha = 1;
-    if (!still || dash.busy) requestAnimationFrame(frame);
-    else setTimeout(() => requestAnimationFrame(frame), 1000); // reduced motion: redraw rarely, for state changes
+    // Faint threads between nearby bright particles.
+    ctx.strokeStyle = color; ctx.lineWidth = 0.5 * k;
+    for (let a = 0; a < n; a += 9) {
+      if (pts[proj[a * 4 + 3]].glow < 0.7) continue;
+      for (let b = a + 9; b < n; b += 9) {
+        const dx = proj[a * 4] - proj[b * 4], dy = proj[a * 4 + 1] - proj[b * 4 + 1], d2 = dx * dx + dy * dy, lim = (R * 0.22) ** 2;
+        if (d2 > lim) continue;
+        ctx.globalAlpha = (1 - d2 / lim) * 0.18 * Math.min(proj[a * 4 + 2], proj[b * 4 + 2]) * (0.6 + energy * 0.5);
+        ctx.beginPath(); ctx.moveTo(proj[a * 4], proj[a * 4 + 1]); ctx.lineTo(proj[b * 4], proj[b * 4 + 1]); ctx.stroke();
+      }
+    }
+    for (let q = 0; q < n; q++) {
+      const p = pts[proj[q * 4 + 3]], depth = proj[q * 4 + 2];
+      const twinkle = 0.75 + 0.25 * Math.sin(t * 3 + p.phase * 5);
+      ctx.globalAlpha = Math.min(1, (0.1 + depth * 0.8) * (0.5 + p.glow * 0.75) * twinkle * (0.9 + energy * 0.3) * (light ? 0.8 : 1));
+      const sz = p.size * (0.6 + depth * 0.9) * (small ? 1.4 : 1) * (light ? 2.6 : 3.4) * k;
+      ctx.drawImage(sprite, proj[q * 4] - sz / 2, proj[q * 4 + 1] - sz / 2, sz, sz);
+    }
+    ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+    if (!still || dash.busy || voice.listening || voice.speaking) requestAnimationFrame(frame);
+    else setTimeout(() => requestAnimationFrame(frame), 1000); // reduced motion: barely moves
   };
   requestAnimationFrame(frame);
 }
@@ -1147,10 +1382,10 @@ const views = {
       '<div class="dash-top"><div>' + (isToday ? '<div class="greeting">' + greeting() + "</div>" : "") + "<h1>" + longDate(date) + "</h1></div>" + nav +
         '<div class="dash-status"><span class="chip idle" id="claude-chip"><span class="dot"></span><span>Claude · Idle</span></span><span class="dash-clock" id="dash-clock"></span></div></div>' +
       '<div class="dash-grid"><div class="dash-col"><div class="stack" id="dash-left"><div class="loading">One moment…</div></div></div>' +
-        '<section class="card dash-core"><div class="card-h">Claude <span class="model-tag" id="model-tag"></span><span class="right"><button class="btn sm ghost" id="chat-new" title="Start a new conversation">New chat</button></span></div>' +
+        '<section class="card dash-core"><div class="card-h">Claude <span class="model-tag" id="model-tag"></span><span class="right"><select id="voice-pick" class="voice-pick" title="Claude’s voice" aria-label="Claude’s voice"></select><button class="btn sm ghost icon" id="voice-toggle" type="button" title="Read all replies aloud (replies to spoken questions are always read)" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></button><button class="btn sm ghost" id="chat-new" title="Start a new conversation">New chat</button></span></div>' +
           '<div class="orb-wrap"><canvas class="orb" aria-hidden="true"></canvas><div class="orb-label">CLAUDE</div><div class="orb-state">Idle</div></div>' +
           '<div class="chat-log" id="chat-log" aria-live="polite"></div>' +
-          '<form class="chat-form" id="chat-form"><textarea id="chat-in" rows="1" placeholder="Ask Claude…" title="Enter sends · Shift+Enter for a new line" aria-label="Message Claude"></textarea><button class="btn primary" id="chat-send" type="submit">Send</button></form>' +
+          '<form class="chat-form" id="chat-form"><button class="mic" id="chat-mic" type="button" aria-label="Speak to Claude"><svg viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button><textarea id="chat-in" rows="1" placeholder="Ask Claude… or press the mic" title="Enter sends · Shift+Enter for a new line" aria-label="Message Claude"></textarea><button class="btn primary" id="chat-send" type="submit">Send</button></form>' +
           '<div class="quick">' + QUICK.map((q) => "<button type=\"button\">" + esc(q) + "</button>").join("") + "</div>" +
           '<div class="usage" id="usage" style="display:none"></div></section>' +
         '<div class="dash-col"><div class="dash-cards" id="dash-right"></div></div></div>';
@@ -1173,6 +1408,22 @@ const views = {
       if (!pre) return chatSend(b.textContent);
       input.value = dash.draft = pre; grow(); input.focus(); input.setSelectionRange(pre.length, pre.length);
     }));
+    $("#chat-mic").onclick = toggleListening;
+    $("#voice-toggle").onclick = () => { voice.always = !voice.always; prefs.set("speak", voice.always ? "1" : "0"); if (voice.always) warmVoice(); else stopSpeaking(); renderChat(); };
+    const pick = $("#voice-pick");
+    const fillVoices = () => {
+      const vs = voices(), k = kokoroId(), cur = k ? null : pickVoice();
+      const own = voice.kokoro && voice.kokoro.available ? '<optgroup label="Shannote voices (offline)">' + voice.kokoro.voices.map((v) => '<option value="kokoro:' + esc(v.id) + '" title="' + esc(v.description) + '"' + (k === v.id ? " selected" : "") + ">" + esc(v.name + " · " + v.description.split(",")[0]) + "</option>").join("") + "</optgroup>" : "";
+      const browser = vs.length ? '<optgroup label="Browser voices">' + vs.map((v) => '<option value="' + esc(v.name) + '"' + (cur && v.name === cur.name ? " selected" : "") + ">" + esc(v.name.replace(/^(Google|Microsoft)\s+/, "").slice(0, 28)) + "</option>").join("") + "</optgroup>" : "";
+      pick.innerHTML = own + browser;
+      pick.style.display = pick.options.length > 1 ? "" : "none";
+    };
+    fillVoices();
+    if (window.speechSynthesis) speechSynthesis.onvoiceschanged = fillVoices;
+    api("tts").then((t) => { voice.kokoro = t; fillVoices(); if (voice.always) warmVoice(); }).catch(() => {});
+    pick.onchange = () => { voice.voiceName = pick.value; prefs.set("voice", pick.value); stopSpeaking(); warmVoice(); speak("Hi, this is how I sound."); };
+    $(".orb").onclick = () => { if (voice.speaking) stopSpeaking(); };
+    if (!SpeechRec) $("#chat-mic").style.display = "none";
     $("#chat-new").onclick = () => { if (dash.busy) chatStop(); dash.session = null; dash.msgs = []; saveChat(); renderChat(); input.focus(); };
     $("#chat-log").addEventListener("click", (e) => { const a = e.target.closest("[data-open]"); if (a) { e.preventDefault(); openLink(a.dataset.open); } });
     renderChat(); renderUsage();
@@ -1626,6 +1877,8 @@ document.addEventListener("keydown", (e) => {
   if (e.target.closest && e.target.closest(".cm-editor")) return;
   if (e.target.matches("input, textarea, select") || e.target.isContentEditable) { if (e.key === "Escape") e.target.blur(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "Escape" && (voice.speaking || voice.listening)) { stopSpeaking(); if (voice.rec) voice.rec.abort(); return; }
+  if (e.key === "m" && $("#chat-mic") && view.dataset.view === "today") { e.preventDefault(); toggleListening(); return; }
   if (e.key === "e" && $("#mode-seg")) { e.preventDefault(); switchMode(prefs.get("mode", "read") === "edit" ? "read" : "edit"); return; }
   if (e.key === "/") { e.preventDefault(); location.hash = "#/search"; }
   else if (e.key === "c" && !isGuest()) { e.preventDefault(); $("#capture").focus(); }
