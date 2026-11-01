@@ -116,7 +116,7 @@ function cookie(req: IncomingMessage, name: string): string | undefined {
  *
  * With `lanToken` (brain web --lan) it also binds to the network so a phone on
  * the same Wi-Fi/Tailscale can use it. Non-local requests must present the token
- * once (?token=…), which is then kept in an HttpOnly, SameSite=Strict cookie.
+ * once (?token=…), which is then kept in an HttpOnly, SameSite=Lax cookie.
  */
 export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", opts: WebOptions = {}) {
   // Built from the real port once listening (port 0 means "pick one").
@@ -159,9 +159,13 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
           // Swap the token in the URL for a cookie, then reload without it.
           res.writeHead(302, {
             location: "/#/today",
-            // Mark it Secure when a tunnel (or any HTTPS proxy) relayed the request, as the
-            // guest cookie above already does, so a later plain-HTTP request can't leak it.
-            "set-cookie": `brain_token=${opts.lanToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000${req.headers["x-forwarded-proto"] === "https" ? "; Secure" : ""}`,
+            // Lax, not Strict, and Secure behind an HTTPS proxy — both matching the guest
+            // cookie above. Strict is withheld on a navigation the browser doesn't consider
+            // same-site, which includes launching the installed app from a home screen: the
+            // token never arrived and Shannote asked for it again on every launch. Writes
+            // don't rely on this anyway; they need the x-brain header a cross-site request
+            // can't set.
+            "set-cookie": `brain_token=${opts.lanToken}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000${req.headers["x-forwarded-proto"] === "https" ? "; Secure" : ""}`,
           });
           return res.end();
         }

@@ -156,7 +156,7 @@ describe("web app LAN mode", () => {
     expect((await get("/api/status", { host: "192.168.1.20:4567", cookie: "brain_token=wrong" })).status).toBe(401);
     const login = await get("/?token=secret-token-123", { host: "192.168.1.20:4567" });
     expect(login.status).toBe(302);
-    expect(String(login.headers["set-cookie"])).toMatch(/brain_token=secret-token-123; HttpOnly; SameSite=Strict/);
+    expect(String(login.headers["set-cookie"])).toMatch(/brain_token=secret-token-123; HttpOnly; SameSite=Lax/);
     const ok = await get("/api/status", { host: "192.168.1.20:4567", cookie: "brain_token=secret-token-123" });
     expect(ok.status).toBe(200);
     // Localhost still works without a token.
@@ -172,6 +172,18 @@ describe("web app LAN mode", () => {
       expect((await get("/api/status", { host: `localhost:${port}`, ...proxy })).status).toBe(401);
       expect((await get("/api/status", { host: `localhost:${port}`, cookie: "brain_token=secret-token-123", ...proxy })).status).toBe(200);
     }
+  });
+
+  it("keeps the token cookie SameSite=Lax so the installed app can launch with it", async () => {
+    // Strict is withheld when the browser doesn't consider the navigation same-site, which
+    // is how a home-screen launch arrives: the app would ask for the token on every open.
+    const r = await get("/?token=secret-token-123", { host: "192.168.1.20:4567" });
+    const c = (r.headers["set-cookie"] as string[])[0]!;
+    expect(c).toContain("SameSite=Lax");
+    expect(c).not.toContain("SameSite=Strict");
+    expect(c).toContain("HttpOnly");
+    // Writes stay protected by the header a cross-site request can't set, not by SameSite.
+    expect((await get("/api/note/save", { host: "192.168.1.20:4567", cookie: "brain_token=secret-token-123" })).status).not.toBe(200);
   });
 
   it("marks the token cookie Secure when a tunnel relayed it over HTTPS", async () => {
