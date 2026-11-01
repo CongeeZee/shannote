@@ -111,6 +111,26 @@ input[type=checkbox]:disabled { cursor: default; }
 .ex-tree summary:hover, .ex-tree a:hover { background: var(--panel-2); }
 .ex-tree a.on { background: var(--panel); color: var(--accent); font-weight: 650; box-shadow: var(--shadow); }
 .ex-tree .ex-empty { padding: 4px 10px; color: var(--faint); font-size: 12.5px; }
+.side-toggle { all: unset; margin-left: auto; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; color: var(--faint); cursor: pointer; transition: background .15s, color .15s, transform .2s; }
+.side-toggle:hover { background: var(--panel-2); color: var(--text); }
+.side-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.app { transition: grid-template-columns .2s ease; }
+/* Collapsed sidebar: an icon rail (labels as tooltips, counts as badges, no file tree). Not on phones. */
+@media (min-width: 761px) {
+  body.side-min .app { grid-template-columns: 68px minmax(0, 1fr); }
+  body.side-min .side { padding: 20px 10px 16px; }
+  body.side-min .side .lbl, body.side-min .explorer, body.side-min #sync-text, body.side-min #sync-btn { display: none; }
+  body.side-min .brand { flex-direction: column; gap: 10px; padding: 2px 0 16px; }
+  body.side-min .side-toggle { margin: 0; transform: rotate(180deg); }
+  /* Every count (even an empty one) is taken out of the row, so all icons sit dead centre. */
+  body.side-min .nav a { justify-content: center; gap: 0; padding: 9px 0; position: relative; }
+  body.side-min .nav .count { position: absolute; margin: 0; }
+  /* Counts become a dot in the corner of the icon (red when something is overdue). */
+  body.side-min .nav .count:not(:empty) { position: absolute; top: 6px; right: 13px; margin: 0; width: 8px; height: 8px; padding: 0; font-size: 0; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--side); }
+  body.side-min .nav .count.alert:not(:empty) { background: var(--danger); }
+  body.side-min .side-foot { padding: 12px 0 0; justify-items: center; }
+  body.side-min .side-foot > div:last-child { flex-direction: column; align-items: center; }
+}
 .side-foot { margin-top: auto; font-size: 13px; color: var(--muted); padding: 14px 10px 0; border-top: 1px dashed var(--border-strong); display: grid; gap: 10px; }
 .sync-line { display: flex; align-items: center; gap: 8px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 0%, transparent); }
@@ -458,7 +478,7 @@ body.guest .owner-only { display: none !important; }
   .note-body { padding: 18px 18px; }
   .task { padding: 10px 14px; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 12px 12px 8px; border-right: 0; border-bottom: 1px solid var(--border); }
-  .brand { padding: 2px 6px 8px; font-size: 17px; } .brand-mark { width: 26px; height: 26px; } .side-foot, .explorer { display: none; }
+  .brand { padding: 2px 6px 8px; font-size: 17px; } .brand-mark { width: 26px; height: 26px; } .side-foot, .explorer, .side-toggle { display: none; }
   .nav { display: flex; gap: 4px; overflow-x: auto; width: 100%; scrollbar-width: none; }
   .nav a { padding: 7px 12px; white-space: nowrap; font-size: 14px; } .nav .count { display: none; }
   .topbar { padding: 10px 14px; } .content { padding: 10px 14px 32px; }
@@ -471,15 +491,15 @@ body.guest .owner-only { display: none !important; }
 <body>
 <div class="app">
   <aside class="side">
-    <div class="brand"><div class="brand-mark"><svg viewBox="0 0 24 24"><path d="M5 10h11v3.5a5.5 5.5 0 0 1-5.5 5.5A5.5 5.5 0 0 1 5 13.5Z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8.5 3.5c-.9 1 .9 2 0 3.2M12 3.5c-.9 1 .9 2 0 3.2"/></svg></div>Shannote</div>
+    <div class="brand"><div class="brand-mark"><svg viewBox="0 0 24 24"><path d="M5 10h11v3.5a5.5 5.5 0 0 1-5.5 5.5A5.5 5.5 0 0 1 5 13.5Z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8.5 3.5c-.9 1 .9 2 0 3.2M12 3.5c-.9 1 .9 2 0 3.2"/></svg></div><span class="lbl">Shannote</span><button class="side-toggle" id="side-toggle" type="button" title="Collapse sidebar ([)" aria-label="Collapse sidebar" aria-expanded="true"><svg viewBox="0 0 24 24"><path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/></svg></button></div>
     <nav class="nav" id="nav">
-      <a href="#/today" data-r="today" class="owner-only"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>Today<span class="count" id="c-today"></span></a>
-      <a href="#/search" data-r="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>Search</a>
-      <a href="#/inbox" data-r="inbox" class="owner-only"><svg viewBox="0 0 24 24"><path d="M3.5 13.5 6 5.5h12l2.5 8"/><path d="M3.5 13.5V18a1.5 1.5 0 0 0 1.5 1.5h14a1.5 1.5 0 0 0 1.5-1.5v-4.5H15a3 3 0 0 1-6 0Z"/></svg>Inbox<span class="count" id="c-inbox"></span></a>
-      <a href="#/tasks" data-r="tasks" class="owner-only"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m8 12.2 2.8 2.8L16.5 9"/></svg>Tasks<span class="count" id="c-tasks"></span></a>
-      <a href="#/notes" data-r="notes"><svg viewBox="0 0 24 24"><path d="M6 3.5h8.5L19 8v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1-1.5Z"/><path d="M14 3.5V8h5M8.5 12.5h7M8.5 16h5"/></svg>Notes</a>
-      <a href="#/handoffs" data-r="handoffs" class="owner-only"><svg viewBox="0 0 24 24"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></svg>Handoffs</a>
-      <a href="#/sync" data-r="sync" class="owner-only"><svg viewBox="0 0 24 24"><path d="M19.5 10.5A7.5 7.5 0 0 0 6 6.6L4.5 8"/><path d="M4.5 4v4h4"/><path d="M4.5 13.5A7.5 7.5 0 0 0 18 17.4l1.5-1.4"/><path d="M19.5 20v-4h-4"/></svg>Sync<span class="count" id="c-health" title="Notes that need fixing"></span></a>
+      <a href="#/today" data-r="today" class="owner-only"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg><span class="lbl">Today</span><span class="count" id="c-today"></span></a>
+      <a href="#/search" data-r="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><span class="lbl">Search</span></a>
+      <a href="#/inbox" data-r="inbox" class="owner-only"><svg viewBox="0 0 24 24"><path d="M3.5 13.5 6 5.5h12l2.5 8"/><path d="M3.5 13.5V18a1.5 1.5 0 0 0 1.5 1.5h14a1.5 1.5 0 0 0 1.5-1.5v-4.5H15a3 3 0 0 1-6 0Z"/></svg><span class="lbl">Inbox</span><span class="count" id="c-inbox"></span></a>
+      <a href="#/tasks" data-r="tasks" class="owner-only"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m8 12.2 2.8 2.8L16.5 9"/></svg><span class="lbl">Tasks</span><span class="count" id="c-tasks"></span></a>
+      <a href="#/notes" data-r="notes"><svg viewBox="0 0 24 24"><path d="M6 3.5h8.5L19 8v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1-1.5Z"/><path d="M14 3.5V8h5M8.5 12.5h7M8.5 16h5"/></svg><span class="lbl">Notes</span></a>
+      <a href="#/handoffs" data-r="handoffs" class="owner-only"><svg viewBox="0 0 24 24"><path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/></svg><span class="lbl">Handoffs</span></a>
+      <a href="#/sync" data-r="sync" class="owner-only"><svg viewBox="0 0 24 24"><path d="M19.5 10.5A7.5 7.5 0 0 0 6 6.6L4.5 8"/><path d="M4.5 4v4h4"/><path d="M4.5 13.5A7.5 7.5 0 0 0 18 17.4l1.5-1.4"/><path d="M19.5 20v-4h-4"/></svg><span class="lbl">Sync</span><span class="count" id="c-health" title="Notes that need fixing"></span></a>
     </nav>
     <section class="explorer" id="explorer" aria-label="Files">
       <div class="ex-head"><button class="ex-toggle" id="ex-toggle" aria-expanded="true" title="Show or hide files">Files</button><input id="ex-filter" placeholder="Filter…" aria-label="Filter files" autocomplete="off"></div>
@@ -767,6 +787,28 @@ function threadItem(t) {
     (t.description ? '<p class="muted">' + inline(t.description) + "</p>" : "") +
     (t.log.length ? '<p class="faint" style="font-size:13.5px">' + inline(t.log[t.log.length - 1]) + "</p>" : "") + "</div>";
 }
+
+// ---------------------------------------------------------------- collapsible sidebar
+function setSideMin(min) {
+  document.body.classList.toggle("side-min", min);
+  const b = $("#side-toggle");
+  b.title = (min ? "Expand" : "Collapse") + " sidebar ([)"; b.setAttribute("aria-label", min ? "Expand sidebar" : "Collapse sidebar"); b.setAttribute("aria-expanded", String(!min));
+  // Icons alone need their names as tooltips.
+  document.querySelectorAll("#nav a").forEach((a) => {
+    const c = a.querySelector(".count");
+    if (min) a.title = a.querySelector(".lbl").textContent + (c && c.textContent ? " · " + c.textContent : ""); else a.removeAttribute("title");
+  });
+  try { localStorage.setItem("shannote-side-min", min ? "1" : ""); } catch {}
+}
+$("#side-toggle").addEventListener("click", () => setSideMin(!document.body.classList.contains("side-min")));
+try {
+  if (localStorage.getItem("shannote-side-min")) {
+    // Open already collapsed, without animating it shut on every page load.
+    const app = $(".app"); app.style.transition = "none";
+    setSideMin(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => (app.style.transition = "")));
+  }
+} catch {}
 
 // ---------------------------------------------------------------- file explorer (sidebar)
 // A folder tree like Obsidian's or VS Code's. Folders you open stay open; the current
@@ -1878,6 +1920,7 @@ document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea, select") || e.target.isContentEditable) { if (e.key === "Escape") e.target.blur(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "Escape" && (voice.speaking || voice.listening)) { stopSpeaking(); if (voice.rec) voice.rec.abort(); return; }
+  if (e.key === "[") { e.preventDefault(); setSideMin(!document.body.classList.contains("side-min")); return; }
   if (e.key === "m" && $("#chat-mic") && view.dataset.view === "today") { e.preventDefault(); toggleListening(); return; }
   if (e.key === "e" && $("#mode-seg")) { e.preventDefault(); switchMode(prefs.get("mode", "read") === "edit" ? "read" : "edit"); return; }
   if (e.key === "/") { e.preventDefault(); location.hash = "#/search"; }
