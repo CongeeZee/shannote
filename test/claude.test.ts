@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -281,6 +281,11 @@ describe("always-on server", () => {
     expect(u).toContain("WantedBy=default.target");
   });
 
+  it("reports an unknown launchd label as not loaded rather than throwing", async () => {
+    const { launchdLoaded } = await import("../src/agent/service.js");
+    expect(launchdLoaded("com.shannote.nothing-here-at-all")).toBe(false);
+  });
+
   it("schedules the morning brief with launchd on macOS", async () => {
     const { briefPlist } = await import("../src/agent/schedule.js");
     const p = briefPlist({ kind: "morning", time: "07:30", node: o.node, cli: o.cli, vault: "/Users/x/vault", log: "/tmp/b.log" });
@@ -317,6 +322,40 @@ describe("Cloudflare tunnel", () => {
   };
   const signIn = async () => { const { mkdirSync } = await import("node:fs"); mkdirSync(join(home, ".cloudflared"), { recursive: true }); writeFileSync(join(home, ".cloudflared", "cert.pem"), "x"); };
   const opts = (run: (c: string, a: string[]) => string) => ({ hostname: "shannote.example.dev", port: 4567, node: "/usr/bin/node", config: join(home, "cfg", "cloudflared.yml"), log: join(home, "tunnel.log"), run, install: false });
+
+  it("skips a deleted tunnel of the same name, whose deleted_at is a real timestamp", async () => {
+    const { pickTunnel } = await import("../src/agent/service.js");
+    // Cloudflare writes the zero timestamp, not null, for a tunnel that is alive.
+    const live = JSON.stringify([{ id: "live-id", name: "shannote", deleted_at: "0001-01-01T00:00:00Z" }]);
+    expect(pickTunnel(live, "shannote")?.id).toBe("live-id");
+    const gone = JSON.stringify([{ id: "gone-id", name: "shannote", deleted_at: "2026-04-01T10:00:00Z" }]);
+    expect(pickTunnel(gone, "shannote")).toBeUndefined();
+    // Both, in the order the API returns them: the live one wins.
+    expect(pickTunnel(JSON.stringify([JSON.parse(gone)[0], JSON.parse(live)[0]]), "shannote")?.id).toBe("live-id");
+    expect(pickTunnel(JSON.stringify([{ id: "x", name: "shannote" }]), "shannote")?.id).toBe("x"); // no field at all
+    expect(pickTunnel("[]", "shannote")).toBeUndefined();
+    expect(pickTunnel("", "shannote")).toBeUndefined();
+  });
+
+  it("creates a fresh tunnel when the old one of that name was deleted", async () => {
+    const { setupCloudflare } = await import("../src/agent/service.js");
+    await signIn();
+    let created = false;
+    const run = (cmd: string, args: string[]) => {
+      if (cmd === "sh") return "/opt/homebrew/bin/cloudflared\n";
+      if (args[0] === "--version") return "cloudflared version 2026.10.0";
+      if (args[1] === "list")
+        return JSON.stringify([
+          { id: "old-id", name: "shannote", deleted_at: "2026-04-01T10:00:00Z" },
+          ...(created ? [{ id: "new-id", name: "shannote", deleted_at: "0001-01-01T00:00:00Z" }] : []),
+        ]);
+      if (args[1] === "create") { created = true; writeFileSync(join(home, ".cloudflared", "new-id.json"), "{}"); return "Created"; }
+      return "";
+    };
+    const r = setupCloudflare(opts(run));
+    expect(r.ok).toBe(true);
+    expect(readFileSync(join(home, "cfg", "cloudflared.yml"), "utf8")).toContain("tunnel: new-id");
+  });
 
   it("only ever publishes a subdomain, never the main site", async () => {
     const { setupCloudflare, isSubdomain } = await import("../src/agent/service.js");

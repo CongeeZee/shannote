@@ -32,6 +32,21 @@ type FeaturePipeline = (texts: string[], opts: { pooling: "mean"; normalize: boo
  * quantised) is downloaded from Hugging Face on first use and cached in
  * ~/.cache/shannote/models. Nothing leaves the machine after that.
  */
+/**
+ * Why `import("@huggingface/transformers")` failed, in words. A missing package and an
+ * installed one whose native runtime won't load need different answers: onnxruntime-node
+ * ships prebuilt binaries for newer macOS than some machines run, and no `npm install` fixes
+ * that. Keyword search is unaffected either way, which is the useful part to say.
+ */
+export function loadFailure(message: string): string {
+  const first = message.split("\n")[0] ?? "";
+  if (/MODULE_NOT_FOUND|Cannot find (module|package)/.test(message))
+    return "Semantic search needs the optional package @huggingface/transformers. Run `npm install` in the shannote folder.";
+  if (/newer than running OS|dlopen|Symbol not found|invalid ELF/.test(message))
+    return `Semantic search can't run on this machine: @huggingface/transformers is installed, but its native runtime (onnxruntime-node) won't load here — its prebuilt binary needs a newer OS. Keyword search still works. (${first})`;
+  return `Semantic search couldn't start @huggingface/transformers: ${first}`;
+}
+
 export class TransformersEmbedder implements Embedder {
   readonly id: string;
   dims: number;
@@ -52,10 +67,8 @@ export class TransformersEmbedder implements Embedder {
       let mod: typeof import("@huggingface/transformers");
       try {
         mod = await import("@huggingface/transformers");
-      } catch {
-        throw new Error(
-          "Semantic search needs the optional package @huggingface/transformers. Run `npm install` in the shannote folder.",
-        );
+      } catch (e) {
+        throw new Error(loadFailure((e as Error).message ?? ""));
       }
       mod.env.cacheDir = join(cacheRoot(), "models");
       if (this.opts.localModelPath) {

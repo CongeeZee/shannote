@@ -6,7 +6,7 @@ import { Brain } from "../src/core.js";
 import { openDb, type DB } from "../src/index/db.js";
 import { indexVault } from "../src/index/indexer.js";
 import { chunkNote } from "../src/search/chunk.js";
-import { HashEmbedder, TransformersEmbedder, type Embedder } from "../src/search/embed.js";
+import { HashEmbedder, loadFailure, TransformersEmbedder, type Embedder } from "../src/search/embed.js";
 import { embedPending, hybridSearch, pendingCount, VectorStore } from "../src/search/semantic.js";
 import { parseNote } from "../src/vault/parse.js";
 
@@ -187,4 +187,18 @@ describe.skipIf(!MODEL_PATH)("real embedding model", () => {
     db.close();
     rmSync(dir, { recursive: true, force: true });
   }, 60_000);
+});
+
+describe("when the embedding model can't load", () => {
+  it("tells a missing package apart from one whose native runtime won't load", () => {
+    expect(loadFailure("Cannot find package '@huggingface/transformers'")).toContain("npm install");
+    const os = loadFailure(
+      "dlopen(/x/onnxruntime_binding.node, 0x0001): Symbol not found: __ZNSt3__13pmr15memory_resourceD2Ev\n  Referenced from: libonnxruntime.1.dylib (built for macOS 14.0 which is newer than running OS)",
+    );
+    expect(os).toContain("needs a newer OS");
+    expect(os).toContain("Keyword search still works");
+    expect(os).not.toContain("npm install"); // nothing to install; don't send them in circles
+    expect(os).not.toContain("Referenced from"); // one line, not a stack
+    expect(loadFailure("something else entirely")).toContain("something else entirely");
+  });
 });
