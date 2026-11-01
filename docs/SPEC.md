@@ -715,13 +715,35 @@ claude mcp add brain --scope user -- npx -y shannote serve
   driving the orb from the playback level. If the model can't load, speech falls back to
   the browser's voices. Speech synthesis isn't an LLM, so SPEC §2.1 still holds; no account,
   key or network after the first download.
-- **Orb**: about 1,500 particles (a denser shell plus a softer core) on an unevenly
-  waving surface, with a few bright "stars" and faint threads between nearby bright ones.
-  Its energy follows Claude's state (idle drift, churning while thinking, the mic level
-  while listening, a pulse per spoken word). Dark themes draw additive glowing dots; light
-  themes draw crisp ones normally. Reduced motion slows it to an occasional redraw.
+- **Orb**: one animation loop (`startOrb`) works out Claude's state (idle, listening,
+  thinking, answering, speaking) and an energy level, then hands both to a painter. Four
+  painters, in `ORB_PAINTERS`:
+  - *Nebula*: about 1,500 particles (a denser shell plus a softer core) on an unevenly
+    waving surface, with a few bright "stars" and faint threads between them.
+  - *Halo*: a liquid core with a specular highlight inside three rippling rings.
+  - *Pulse*: a ring of bars around a glowing core.
+  - *Globe*: a wireframe globe inside a heading ring.
+  The newer three keep the states visibly apart, as voice interfaces should: listening draws
+  inward towards the voice (rings contract, bars point in, the globe squeezes), speaking
+  pushes outward with each word (ripples, outward bars, a swell), and thinking sweeps (an
+  arc, a chasing band, a scanning meridian). Signals are eased, so a spiky mic level doesn't
+  make them twitch. Colours come from the theme's `--orb-a` and `--orb-b`. Dark themes draw
+  additively; light themes draw normally. Reduced motion slows it to an occasional redraw.
+- **Themes**: Paper and Espresso (the originals), plus three dark ones: *Glass* (translucent
+  panels over a soft ice-and-violet light field), *Void* (true black, for OLED phones that
+  stay on) and *Terminal* (phosphor green, monospace, a faint grid). *Auto* follows the
+  device between Paper and Espresso. A theme is one `:root[data-theme="…"]` block of tokens;
+  it also names its default orb (`--orb`), which the picker can override. The choice is per
+  device (localStorage) and restored by a script in `<head>`, before the first paint.
+  Translucent panels are `color-mix(… var(--glass), transparent)`, so `prefers-reduced-
+  transparency` and `prefers-contrast: more` make them all solid with one token. Real
+  `backdrop-filter` blur is only on chrome that floats over scrolling content (topbar,
+  popovers, tooltips, toast): behind a card there is only a soft gradient, so blurring it
+  would cost a phone's GPU and change nothing. `test/themes.test.ts` checks every theme
+  defines the whole palette and meets WCAG contrast against the brightest point of its
+  light field, not just its base colour.
 - **Not done yet** (from looking at other "AI OS" dashboards): a focus timer, past-chat
-  history, an activity heatmap.
+  history, an activity heatmap. Themes don't yet sync between devices.
 
 ## 20. Implementation notes (Phase 6: always-on server)
 
