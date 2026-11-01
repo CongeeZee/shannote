@@ -173,4 +173,15 @@ describe("web app LAN mode", () => {
       expect((await get("/api/status", { host: `localhost:${port}`, cookie: "brain_token=secret-token-123", ...proxy })).status).toBe(200);
     }
   });
+
+  it("marks the token cookie Secure when a tunnel relayed it over HTTPS", async () => {
+    const cookie = (h: Record<string, unknown>) => (h["set-cookie"] as string[])[0]!;
+    const https = await get("/?token=secret-token-123", { host: "shannote.example.dev", "x-forwarded-for": "203.0.113.7", "x-forwarded-proto": "https" });
+    expect(https.status).toBe(302);
+    expect(cookie(https.headers)).toContain("; Secure");
+    // Plain HTTP on the LAN must not set it, or the cookie would never come back.
+    const plain = await get("/?token=secret-token-123", { host: "192.168.1.20:4567" });
+    expect(plain.status).toBe(302);
+    expect(cookie(plain.headers)).not.toContain("Secure");
+  });
 });

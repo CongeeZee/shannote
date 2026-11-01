@@ -159,7 +159,9 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
           // Swap the token in the URL for a cookie, then reload without it.
           res.writeHead(302, {
             location: "/#/today",
-            "set-cookie": `brain_token=${opts.lanToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`,
+            // Mark it Secure when a tunnel (or any HTTPS proxy) relayed the request, as the
+            // guest cookie above already does, so a later plain-HTTP request can't leak it.
+            "set-cookie": `brain_token=${opts.lanToken}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000${req.headers["x-forwarded-proto"] === "https" ? "; Secure" : ""}`,
           });
           return res.end();
         }

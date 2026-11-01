@@ -56,12 +56,31 @@ export function plist(o: { label: string; args: string[]; log: string; path: str
 const uid = () => String(process.getuid?.() ?? "");
 const launchctl = (...args: string[]) => execFileSync("launchctl", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
+/** Blocks the thread; the launchctl calls around it are synchronous and need to pace themselves. */
+const sleep = (ms: number) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+
+/** Whether launchd knows the label at all. A brief's agent has no pid between runs. */
+export function launchdLoaded(label: string): boolean {
+  try { launchctl("print", `gui/${uid()}/${label}`); return true; } catch { return false; }
+}
+
 export function launchdInstall(label: string, body: string): void {
   mkdirSync(launchAgentsDir(), { recursive: true });
   launchdRemove(label); // replace an older version cleanly
+  // `bootout` returns before launchd has finished letting go of the label, and bootstrapping
+  // one that's still on its way out quietly does nothing — which left the agent dead on any
+  // reinstall, the documented way to update. Wait for it to go, then check it came back.
+  for (let i = 0; i < 50 && launchdLoaded(label); i++) sleep(100);
   writeFileSync(plistPath(label), body);
-  try { launchctl("bootstrap", `gui/${uid()}`, plistPath(label)); }
-  catch { launchctl("load", "-w", plistPath(label)); } // older macOS
+  let last = "";
+  for (let i = 0; i < 3; i++) {
+    try { launchctl("bootstrap", `gui/${uid()}`, plistPath(label)); }
+    catch (e) { last = String((e as { stderr?: string }).stderr || (e as Error).message).trim(); }
+    if (launchdLoaded(label)) return;
+    sleep(300);
+  }
+  try { launchctl("load", "-w", plistPath(label)); } catch (e) { last = String((e as Error).message).trim(); } // older macOS
+  if (!launchdLoaded(label)) throw new Error(`launchd wouldn't load ${label}${last ? `: ${last}` : ""}`);
 }
 
 export function launchdRemove(label: string): boolean {
@@ -238,6 +257,19 @@ function removeTunnelService(): void {
 }
 
 /**
+ * The live tunnel called `name` in `cloudflared tunnel list --output json`. A live tunnel's
+ * `deleted_at` is the zero timestamp rather than null, so "deleted" can't be tested by asking
+ * whether the field has a value — and a deleted tunnel's name is free to be reused, so a
+ * plain name match can return one that's gone.
+ */
+export function pickTunnel(listJson: string, name: string): { id: string; name: string } | undefined {
+  const list = JSON.parse(listJson || "[]") as { id?: string; name?: string; deleted_at?: string | null }[];
+  const deleted = (d?: string | null) => !!d && !/^0001-01-01/.test(d);
+  const hit = list.find((t) => t.name === name && !!t.id && !deleted(t.deleted_at));
+  return hit ? { id: hit.id!, name: hit.name! } : undefined;
+}
+
+/**
  * Creates (or reuses) the "shannote" tunnel, adds the subdomain's DNS record, writes the
  * tunnel config and runs it as a service. Returns what it did, or the step you need to do first.
  */
@@ -253,11 +285,11 @@ export function setupCloudflare(o: { hostname: string; port: number; node: strin
     return { ok: false, problem: `Sign cloudflared in to your Cloudflare account first (it opens a browser; choose ${o.hostname.split(".").slice(-2).join(".")}):\n  cloudflared tunnel login` };
 
   const notes: string[] = [];
-  const list = () => JSON.parse(run("cloudflared", ["tunnel", "list", "--output", "json"]) || "[]") as { id: string; name: string }[];
-  let tunnel = list().find((t) => t.name === TUNNEL_NAME);
+  const list = () => pickTunnel(run("cloudflared", ["tunnel", "list", "--output", "json"]), TUNNEL_NAME);
+  let tunnel = list();
   if (!tunnel) {
     run("cloudflared", ["tunnel", "create", TUNNEL_NAME]);
-    tunnel = list().find((t) => t.name === TUNNEL_NAME);
+    tunnel = list();
     if (!tunnel) return { ok: false, problem: "cloudflared created the tunnel but it isn't in `cloudflared tunnel list`." };
     notes.push(`Created the Cloudflare tunnel "${TUNNEL_NAME}" (${tunnel.id}).`);
   } else notes.push(`Using the existing Cloudflare tunnel "${TUNNEL_NAME}" (${tunnel.id}).`);

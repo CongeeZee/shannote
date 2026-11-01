@@ -49,6 +49,11 @@ shannote init ~/vault --device macbook      # adopts the existing vault; pick an
 shannote embed                              # search by meaning (downloads a small model once)
 ```
 
+If `shannote embed` says its native runtime won't load, this Mac's macOS is older than the
+prebuilt `onnxruntime-node` binary needs (macOS 14+). Nothing to fix: notes, tasks, keyword
+search, chat and the dashboard all work, and search-by-meaning still works on your main
+laptop.
+
 ## 3A. Tailscale
 
 1. Install Tailscale for Mac from <https://tailscale.com/download> and sign in with the same
