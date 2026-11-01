@@ -90,6 +90,24 @@ const GUEST_ROUTES = new Set([
   "POST /api/note/create",
 ]);
 
+/** A page load (as opposed to fetch/XHR), which is what we can usefully bounce. */
+function navigation(req: IncomingMessage): boolean {
+  return req.method === "GET" && req.headers["sec-fetch-mode"] === "navigate";
+}
+
+const TOKEN_HTML =
+  "<!doctype html><meta name=viewport content='width=device-width'><p style='font:16px system-ui;padding:24px'>" +
+  "Open the link with <code>?token=…</code> printed by <code>shannote server install</code> or <code>brain web --lan</code>.</p>";
+
+/** Reloads itself once, from this origin, so a Lax cookie the launch withheld is sent. */
+const RETRY_HTML =
+  "<!doctype html><meta name=viewport content='width=device-width'><title>Shannote</title>" +
+  "<body style='background:#f3ebdf'><script>(function(){try{" +
+  "if(sessionStorage.getItem('shannote_retry')){location.replace('/?retry=1'+location.hash);return;}" +
+  "sessionStorage.setItem('shannote_retry','1');location.replace(location.pathname+location.search+location.hash);" +
+  "}catch(e){location.replace('/?retry=1');}})();</script>" +
+  "<noscript><p style='font:16px system-ui;padding:24px'>Open the link with <code>?token=…</code>.</p></noscript>";
+
 function isLoopback(req: IncomingMessage): boolean {
   const a = req.socket.remoteAddress ?? "";
   return a === "127.0.0.1" || a === "::1" || a === "::ffff:127.0.0.1";
@@ -153,7 +171,20 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
           if (gGivenButInvalid(req, q))
             return send(res, 401, "<!doctype html><meta name=viewport content='width=device-width'><p style='font:16px system-ui;padding:24px'>This share link has been turned off or is wrong. Ask for a new one.</p>", "text/html");
           if (!opts.lanToken) return send(res, 403, { error: "forbidden host" });
-          return send(res, 401, "<!doctype html><meta name=viewport content='width=device-width'><p style='font:16px system-ui;padding:24px'>Open the link with <code>?token=…</code> printed by <code>brain web --lan</code>.</p>", "text/html");
+          // Launching the installed app is a top-level navigation the browser calls
+          // cross-site, and a SameSite=Lax cookie is withheld on those — so the token
+          // doesn't arrive even though it is in the jar. Navigating once from our own
+          // page makes the next request same-origin, which does carry it. sessionStorage
+          // (empty on a fresh launch, kept across the reload) stops this looping when
+          // there genuinely is no cookie.
+          if (navigation(req) && !q.has("retry"))
+            return send(res, 200, RETRY_HTML, "text/html");
+          return send(res, 401, TOKEN_HTML, "text/html");
+        }
+        if (q.has("retry") && !q.get("token")) {
+          // The bounce above worked: the cookie came through. Send them to the real app.
+          res.writeHead(302, { location: "/#/today" });
+          return res.end();
         }
         if (q.get("token")) {
           // Swap the token in the URL for a cookie, then reload without it.
