@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="Shannote">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<script>try { var t = localStorage.getItem("brain-theme"); if (/^(light|dark|glass|void|terminal)$/.test(t)) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <style>
 @font-face { font-family: "Fraunces"; src: url("/fonts/fraunces.woff2") format("woff2"); font-weight: 300 800; font-display: swap; }
 @font-face { font-family: "Literata"; src: url("/fonts/literata.woff2") format("woff2"); font-weight: 300 800; font-display: swap; }
@@ -25,15 +26,21 @@
   --mark: #f3d899; --ring: rgba(143, 90, 58, .22);
   --shadow: 0 1px 2px rgba(91, 61, 38, .06), 0 6px 18px -6px rgba(91, 61, 38, .10);
   --shadow-lift: 0 2px 4px rgba(91, 61, 38, .07), 0 12px 28px -10px rgba(91, 61, 38, .18);
-  --grain-opacity: .35;
+  --grain-opacity: .35; --grain-blend: multiply;
+  --grain-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .32 0 0 0 0 .2 0 0 0 .12 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");;
+  --backdrop: none;
+  --overlay: var(--panel); --toast-bg: #3a2c22; --toast-fg: #fbf3e6;
+  --orb: nebula; --orb-a: var(--accent); --orb-b: var(--accent);
   --radius: 16px; --radius-sm: 10px;
   --mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
   --sans: "Nunito", ui-rounded, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --serif: "Literata", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --ui-sans: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --ui-display: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme]) {
     --bg: #1e1813; --side: #19140f; --panel: #28201a; --panel-2: #31281f; --panel-3: #3a2f25;
     --text: #f0e5d6; --muted: #c2ad96; --faint: #8f7a66; --border: #3b2f25; --border-strong: #4a3b2e;
     --accent: #d9a26f; --accent-hover: #e6b585; --accent-soft: #3d2d20; --on-accent: #23180f;
@@ -41,7 +48,7 @@
     --mark: #5e4523; --ring: rgba(217, 162, 111, .25);
     --shadow: 0 1px 2px rgba(0,0,0,.25), 0 8px 22px -10px rgba(0,0,0,.45);
     --shadow-lift: 0 2px 4px rgba(0,0,0,.3), 0 14px 30px -12px rgba(0,0,0,.55);
-    --grain-opacity: .18;
+    --grain-opacity: .18; --toast-bg: #f0e5d6; --toast-fg: #2a2019;
   }
 }
 :root[data-theme="dark"] {
@@ -52,15 +59,97 @@
   --mark: #5e4523; --ring: rgba(217, 162, 111, .25);
   --shadow: 0 1px 2px rgba(0,0,0,.25), 0 8px 22px -10px rgba(0,0,0,.45);
   --shadow-lift: 0 2px 4px rgba(0,0,0,.3), 0 14px 30px -12px rgba(0,0,0,.55);
-  --grain-opacity: .18;
+  --grain-opacity: .18; --toast-bg: #f0e5d6; --toast-fg: #2a2019;
+}
+
+/* ---- Glass: dark liquid glass. Translucent panels over a soft ice-and-violet light field. ---- */
+:root[data-theme="glass"] {
+  --glass: 60%;
+  --bg: #060a13; --side: color-mix(in srgb, #0b1220 var(--glass), transparent);
+  --panel: color-mix(in srgb, #0e1626 var(--glass), transparent); --panel-2: rgba(255, 255, 255, .055); --panel-3: rgba(255, 255, 255, .1);
+  --overlay: color-mix(in srgb, #0d1524 90%, transparent);
+  --text: #e9eef8; --muted: #afbcd1; --faint: #7d8ba3; --border: rgba(255, 255, 255, .085); --border-strong: rgba(255, 255, 255, .17);
+  --accent: #7dd3fc; --accent-hover: #b0e6ff; --accent-soft: rgba(125, 211, 252, .14); --on-accent: #041320;
+  --danger: #fb7185; --danger-soft: rgba(251, 113, 133, .15); --ok: #6ee7b7; --ok-soft: rgba(110, 231, 183, .13); --warn: #fcd34d; --warn-soft: rgba(252, 211, 77, .13);
+  --mark: rgba(125, 211, 252, .26); --ring: rgba(125, 211, 252, .38);
+  --shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 10px 30px -14px rgba(0, 0, 0, .7);
+  --shadow-lift: inset 0 1px 0 rgba(255, 255, 255, .1), 0 18px 44px -16px rgba(0, 0, 0, .8);
+  --toast-bg: #e9eef8; --toast-fg: #07111d;
+  --backdrop: radial-gradient(70vmax 60vmax at 8% 0%, rgba(56, 189, 248, .2), transparent 62%),
+    radial-gradient(60vmax 55vmax at 95% 12%, rgba(139, 92, 246, .2), transparent 60%),
+    radial-gradient(70vmax 50vmax at 55% 105%, rgba(20, 184, 166, .13), transparent 60%), #060a13;
+  --grain-opacity: .06; --grain-blend: overlay;
+  --radius: 18px; --radius-sm: 12px;
+  --sans: var(--ui-sans); --display: var(--ui-display);
+  --orb: halo; --orb-a: #7dd3fc; --orb-b: #a78bfa;
+}
+
+/* ---- Void: true black for OLED screens, violet-to-magenta light, panels that barely exist. ---- */
+:root[data-theme="void"] {
+  --glass: 72%;
+  --bg: #000000; --side: color-mix(in srgb, #06060b var(--glass), transparent);
+  --panel: color-mix(in srgb, #0b0a14 var(--glass), transparent); --panel-2: rgba(255, 255, 255, .05); --panel-3: rgba(255, 255, 255, .09);
+  --overlay: color-mix(in srgb, #0c0b16 92%, transparent);
+  --text: #eeecff; --muted: #aea8d1; --faint: #827ca9; --border: rgba(167, 139, 250, .14); --border-strong: rgba(167, 139, 250, .28);
+  --accent: #c4b5fd; --accent-hover: #ddd6fe; --accent-soft: rgba(196, 181, 253, .14); --on-accent: #14082b;
+  --danger: #fb7185; --danger-soft: rgba(251, 113, 133, .14); --ok: #86efac; --ok-soft: rgba(134, 239, 172, .12); --warn: #fde68a; --warn-soft: rgba(253, 230, 138, .12);
+  --mark: rgba(196, 181, 253, .26); --ring: rgba(196, 181, 253, .4);
+  --shadow: 0 0 0 1px rgba(167, 139, 250, .05), 0 12px 32px -16px rgba(124, 58, 237, .45);
+  --shadow-lift: 0 0 0 1px rgba(167, 139, 250, .08), 0 20px 48px -18px rgba(124, 58, 237, .6);
+  --toast-bg: #eeecff; --toast-fg: #14082b;
+  --backdrop: radial-gradient(80vmax 50vmax at 50% -8%, rgba(124, 58, 237, .2), transparent 62%),
+    radial-gradient(60vmax 50vmax at 100% 100%, rgba(219, 39, 119, .1), transparent 60%), #000000;
+  --grain-opacity: 0;
+  --radius: 14px; --radius-sm: 10px;
+  --sans: var(--ui-sans); --display: var(--ui-display);
+  --orb: pulse; --orb-a: #a78bfa; --orb-b: #f472b6;
+}
+
+/* ---- Terminal: mission control. Phosphor green on black, a faint grid, square corners. ---- */
+:root[data-theme="terminal"] {
+  --glass: 86%;
+  --bg: #030604; --side: color-mix(in srgb, #050a06 var(--glass), transparent);
+  --panel: color-mix(in srgb, #08110b var(--glass), transparent); --panel-2: rgba(74, 222, 128, .06); --panel-3: rgba(74, 222, 128, .11);
+  --overlay: color-mix(in srgb, #07100a 94%, transparent);
+  --text: #d6f5df; --muted: #91c49f; --faint: #659473; --border: rgba(74, 222, 128, .17); --border-strong: rgba(74, 222, 128, .32);
+  --accent: #4ade80; --accent-hover: #86efac; --accent-soft: rgba(74, 222, 128, .14); --on-accent: #02140a;
+  --danger: #f87171; --danger-soft: rgba(248, 113, 113, .14); --ok: #a3e635; --ok-soft: rgba(163, 230, 53, .13); --warn: #fbbf24; --warn-soft: rgba(251, 191, 36, .13);
+  --mark: rgba(251, 191, 36, .28); --ring: rgba(74, 222, 128, .42);
+  --shadow: 0 0 0 1px rgba(74, 222, 128, .03); --shadow-lift: 0 0 28px -10px rgba(74, 222, 128, .3);
+  --toast-bg: #4ade80; --toast-fg: #02140a;
+  --backdrop: linear-gradient(rgba(74, 222, 128, .045) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, rgba(74, 222, 128, .045) 1px, transparent 1px) 0 0 / 32px 32px,
+    radial-gradient(70vmax 60vmax at 50% 0%, rgba(74, 222, 128, .08), transparent 65%), #030604;
+  --grain-img: repeating-linear-gradient(0deg, rgba(0, 0, 0, .4) 0 1px, transparent 1px 3px);
+  --grain-opacity: .35; --grain-blend: normal;
+  --radius: 4px; --radius-sm: 3px;
+  --display: var(--mono); --sans: var(--mono);
+  --orb: globe; --orb-a: #4ade80; --orb-b: #fbbf24;
+}
+
+/* Translucent themes. The light field shows through panels without blur (behind a card there is
+   only a soft gradient, so blurring it would cost a phone's GPU and change nothing). Real blur is
+   kept for chrome that floats over scrolling content, three or four layers at most. */
+:root:is([data-theme="glass"], [data-theme="void"], [data-theme="terminal"]) .topbar { background: color-mix(in srgb, var(--bg) 55%, transparent); }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root:is([data-theme="glass"], [data-theme="void"], [data-theme="terminal"]) :is(.topbar, .u-tip, .toast, .appearance, .cm-tooltip) {
+    -webkit-backdrop-filter: blur(18px) saturate(170%); backdrop-filter: blur(18px) saturate(170%);
+  }
+}
+/* Solid surfaces for anyone who asked for less transparency or more contrast. Matches the theme
+   selectors' specificity and comes later, so it wins. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root[data-theme] { --glass: 100%; }
+  :root:is([data-theme="glass"], [data-theme="void"], [data-theme="terminal"]) { --border: var(--border-strong); }
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
 body { background: var(--bg); color: var(--text); font: 15.5px/1.6 var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-/* soft paper grain */
-body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: var(--grain-opacity); mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .32 0 0 0 0 .2 0 0 0 .12 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+/* The theme's light field (nothing for Paper and Espresso), then grain or scanlines over it. */
+body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; background: var(--backdrop); }
+body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: var(--grain-opacity); mix-blend-mode: var(--grain-blend);
+  background-image: var(--grain-img); }
 .app { position: relative; z-index: 1; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-hover); }
@@ -372,7 +461,7 @@ body[data-view="today"] .content { max-width: none; }
 .u-chart .hit { fill: transparent; }
 .u-chart line { stroke: var(--border-strong); stroke-width: 1; }
 .u-axis { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--faint); margin-top: 5px; }
-.u-tip { position: absolute; bottom: calc(100% + 4px); background: var(--panel-3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; font-size: 12px; white-space: nowrap; pointer-events: none; box-shadow: var(--shadow); }
+.u-tip { position: absolute; bottom: calc(100% + 4px); background: var(--overlay); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; font-size: 12px; white-space: nowrap; pointer-events: none; box-shadow: var(--shadow); }
 .u-proj { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 12px; font-size: 12.5px; color: var(--muted); }
 .u-proj b { color: var(--text); font-weight: 650; }
 .u-table { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
@@ -438,9 +527,33 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1
    whole sentence, so there it does. */
 .kv dd .pill { white-space: normal; max-width: 100%; }
 .kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }
-.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(6px); background: #3a2c22; color: #fbf3e6; padding: 10px 18px; border-radius: 14px; font-size: 14.5px; font-weight: 650; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 50; box-shadow: var(--shadow-lift); }
-:root[data-theme="dark"] .toast { background: #f0e5d6; color: #2a2019; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .toast { background: #f0e5d6; color: #2a2019; } }
+.appearance { position: fixed; z-index: 60; left: 16px; bottom: 76px; width: 340px; max-width: calc(100vw - 24px); background: var(--overlay); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow-lift); padding: 14px 14px 12px; }
+.appearance[hidden] { display: none; }
+.ap-h { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin: 0 2px 8px; }
+.ap-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.ap-opt { font: inherit; font-family: var(--sans); font-size: 12.5px; font-weight: 650; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 6px 6px; cursor: pointer; display: grid; justify-items: center; gap: 5px; }
+.ap-opt:hover { color: var(--text); border-color: var(--border-strong); }
+.ap-opt[aria-checked="true"] { color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 2px var(--ring); }
+.ap-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ap-sw { width: 100%; height: 36px; border-radius: 7px; background: var(--sw-bg); position: relative; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .28); }
+.ap-sw::before { content: ""; position: absolute; left: 7px; right: 7px; top: 8px; bottom: 6px; border-radius: 5px; background: var(--sw-panel); box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .18); }
+.ap-sw::after { content: ""; position: absolute; right: 12px; top: 13px; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg, var(--sw-a), var(--sw-b)); box-shadow: 0 0 9px var(--sw-a); }
+.ap-orb-row { display: flex; gap: 12px; align-items: center; }
+.ap-preview { flex: 0 0 auto; width: 92px; height: 92px; border-radius: var(--radius-sm); background: var(--panel-2); border: 1px solid var(--border); display: grid; place-items: center; }
+.ap-preview canvas { width: 88px; height: 88px; }
+.ap-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ap-chips .ap-opt { display: inline-flex; padding: 6px 11px; border-radius: 999px; }
+.only-narrow { display: none; }
+@media (max-width: 760px) {
+  .only-narrow { display: inline-flex; }
+  /* The capture box is flex: 1 but its input's natural width wouldn't shrink, which pushed the
+     topbar's last button off a 320px screen. */
+  .capture, .capture input { min-width: 0; }
+  .topbar { gap: 6px; }
+  /* A sheet along the bottom, where a thumb can reach it. */
+  .appearance { left: 10px; right: 10px; bottom: 10px; width: auto; max-width: none; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+}
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(6px); background: var(--toast-bg); color: var(--toast-fg); padding: 10px 18px; border-radius: 14px; font-size: 14.5px; font-weight: 650; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 50; box-shadow: var(--shadow-lift); }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.err { background: var(--danger); color: #fff; }
 .loading { color: var(--faint); padding: 60px 0; text-align: center; font-family: var(--display); font-size: 18px; }
@@ -505,6 +618,7 @@ body.guest .owner-only { display: none !important; }
   .btn.sm { min-height: 34px; }
   input[type="date"] { min-height: 32px; }
   input[type="checkbox"] { width: 20px; height: 20px; }
+  .ap-chips .ap-opt { min-height: 40px; padding: 8px 15px; }
 }
 </style>
 </head>
@@ -529,7 +643,7 @@ body.guest .owner-only { display: none !important; }
       <div class="sync-line"><span class="dot" id="sync-dot"></span><span id="sync-text">…</span></div>
       <div style="display:flex;gap:6px">
         <button class="btn sm" id="sync-btn">Sync now</button>
-        <button class="btn sm ghost" id="theme-btn" title="Light / dark"><svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></svg></button>
+        <button class="btn sm ghost" id="theme-btn" title="Appearance" aria-haspopup="dialog" aria-controls="appearance"><svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 3.5a8.5 8.5 0 0 0 0 17c1.2 0 1.8-.8 1.8-1.7 0-1.2-1-1.6-1-2.7 0-1 .8-1.6 1.8-1.6h2.1a3.8 3.8 0 0 0 3.8-3.8C20.5 6.8 16.7 3.5 12 3.5Z"/><circle cx="7.6" cy="11.2" r="1.1"/><circle cx="10.4" cy="7.4" r="1.1"/><circle cx="15" cy="7.6" r="1.1"/></svg></button>
       </div>
     </div>
   </aside>
@@ -541,11 +655,21 @@ body.guest .owner-only { display: none !important; }
         <span class="kbd">Enter</span>
       </form>
       <a class="btn ghost" href="#/search" title="Search (/)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><span class="kbd">/</span></a>
+      <button class="btn ghost only-narrow" id="theme-btn-m" title="Appearance" aria-haspopup="dialog" aria-controls="appearance"><svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 3.5a8.5 8.5 0 0 0 0 17c1.2 0 1.8-.8 1.8-1.7 0-1.2-1-1.6-1-2.7 0-1 .8-1.6 1.8-1.6h2.1a3.8 3.8 0 0 0 3.8-3.8C20.5 6.8 16.7 3.5 12 3.5Z"/><circle cx="7.6" cy="11.2" r="1.1"/><circle cx="10.4" cy="7.4" r="1.1"/><circle cx="15" cy="7.6" r="1.1"/></svg></button>
     </div>
     <div class="content" id="view"><div class="loading">Putting the kettle on…</div></div>
   </main>
 </div>
 <div class="toast" id="toast"></div>
+<div class="appearance" id="appearance" role="dialog" aria-label="Appearance" hidden>
+  <div class="ap-h">Theme</div>
+  <div class="ap-grid" id="ap-themes" role="radiogroup" aria-label="Theme"></div>
+  <div class="ap-h">Orb</div>
+  <div class="ap-orb-row">
+    <div class="ap-preview" id="ap-preview"></div>
+    <div class="ap-chips" id="ap-orbs" role="radiogroup" aria-label="Orb style"></div>
+  </div>
+</div>
 <script src="/editor.js"></script>
 <script>
 "use strict";
@@ -1182,10 +1306,74 @@ function toggleListening() {
 }
 
 // ---------------------------------------------------------------- the orb
-// A glowing cloud of particles, denser at the core and the surface, that drifts in a slowly
-// changing flow. It churns while Claude thinks, follows your voice while listening, and
-// pulses with each word when Claude speaks. Colour is the theme's accent.
+// ---------------------------------------------------------------- orb
+// One animation loop, several ways to draw it. The loop works out how lively the orb should be
+// (idle, listening, thinking, answering, speaking) and hands that to the chosen painter. Painters
+// keep the states visibly apart, as voice interfaces should: listening draws inward towards your
+// voice, speaking pushes outward with each word, thinking sweeps. Colours come from the theme's
+// --orb-a and --orb-b; the style from the picker, or the theme's --orb on Auto.
+
+/** Any CSS colour as [r, g, b]. A scratch canvas does the parsing, so names and rgb() work too. */
+const orbRgb = (() => {
+  const g = document.createElement("canvas").getContext("2d"), seen = new Map();
+  return (c) => {
+    if (seen.has(c)) return seen.get(c);
+    g.fillStyle = "#000"; g.fillStyle = c;
+    const s = g.fillStyle, v = s[0] === "#" ? [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16)) : s.match(/[\d.]+/g).slice(0, 3).map(Number);
+    seen.set(c, v);
+    return v;
+  };
+})();
+const rgba = (v, a) => `rgba(${v[0] | 0}, ${v[1] | 0}, ${v[2] | 0}, ${Math.max(0, Math.min(1, a)).toFixed(3)})`;
+const mixRgb = (p, q, f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f, p[2] + (q[2] - p[2]) * f];
+const WHITE = [255, 255, 255];
+
 function startOrb(canvas) {
+  const ctx = canvas.getContext("2d");
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const painters = {};
+  const isLight = () => {
+    const m = getComputedStyle(document.body).backgroundColor.match(/\d+/g);
+    return !!m && (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255 > 0.55;
+  };
+  let t = Math.random() * 100, energy = 0.2, last = performance.now();
+  const frame = (now) => {
+    if (!canvas.isConnected) return;
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const dpr = devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return requestAnimationFrame(frame);
+    if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+    const css = getComputedStyle(document.documentElement);
+    const a = css.getPropertyValue("--orb-a").trim() || css.getPropertyValue("--accent").trim() || "#d9a26f";
+    const b = css.getPropertyValue("--orb-b").trim() || a;
+    let style = currentOrb();
+    if (style === "auto") style = css.getPropertyValue("--orb").trim();
+    if (!ORB_PAINTERS[style]) style = "nebula";
+    const paint = (painters[style] ??= ORB_PAINTERS[style]());
+    const target = voice.listening ? 0.55 + voice.level * 1.4 : dash.busy === "thinking" ? 1.25 : dash.busy ? 0.8 : voice.speaking ? 0.6 + voice.pulse * 0.9 : 0.22;
+    energy += (target - energy) * Math.min(1, dt * 4);
+    t += dt * (0.35 + energy * 0.9);
+    const R = Math.min(w, h) * 0.4;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    paint(ctx, {
+      w, h, t, dt, energy, R, k: Math.max(1, R / 92), small: w < 140, light: isLight(), a, b,
+      listening: !!voice.listening, level: voice.level || 0, speaking: !!voice.speaking, pulse: voice.pulse || 0,
+      thinking: dash.busy === "thinking", answering: dash.busy === "answering",
+    });
+    // Decay by wall-clock time, not per loop: the picker's preview can run alongside the Today
+    // orb, and both get the same frame timestamp, so the second sees no time passed.
+    voice.pulse *= Math.pow(0.02, Math.min(0.05, (now - (voice.pulseAt ?? now)) / 1000)); voice.pulseAt = now;
+    ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1; ctx.lineCap = "butt";
+    if (!still || dash.busy || voice.listening || voice.speaking) requestAnimationFrame(frame);
+    else setTimeout(() => requestAnimationFrame(frame), 1000); // reduced motion: barely moves
+  };
+  requestAnimationFrame(frame);
+}
+
+// Nebula: a glowing cloud of particles, denser at the core and the surface, drifting in a slowly
+// changing flow. It churns while Claude thinks, follows your voice, and pulses with each word.
+function orbNebula() {
   const N = 1500, pts = [];
   for (let i = 0; i < N; i++) {
     const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u);
@@ -1207,31 +1395,11 @@ function startOrb(canvas) {
     g.clearRect(0, 0, 32, 32); g.globalAlpha = 1; g.fillStyle = gr; g.fillRect(0, 0, 32, 32);
     spriteKey = color + light;
   };
-  const isLight = () => {
-    const m = getComputedStyle(document.body).backgroundColor.match(/\d+/g);
-    return !!m && (0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2]) / 255 > 0.55;
-  };
-  const ctx = canvas.getContext("2d");
-  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let t = Math.random() * 100, energy = 0.2, last = performance.now();
   const proj = new Float32Array(N * 4);
-  const frame = (now) => {
-    if (!canvas.isConnected) return;
-    const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    const dpr = devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
-    if (!w || !h) return requestAnimationFrame(frame);
-    if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
-    const color = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#d9a26f";
-    const light = isLight();
+  return (ctx, e) => {
+    const { w, h, t, energy, R, k, light, small } = e, color = e.a, step = small ? 3 : 1;
     if (color + light !== spriteKey) paintSprite(color, light);
-    const target = voice.listening ? 0.55 + voice.level * 1.4 : dash.busy === "thinking" ? 1.25 : dash.busy ? 0.8 : voice.speaking ? 0.6 + voice.pulse * 0.9 : 0.22;
-    energy += (target - energy) * Math.min(1, dt * 4);
-    voice.pulse *= Math.pow(0.02, dt);
-    t += dt * (0.35 + energy * 0.9);
-    const R = Math.min(w, h) * 0.4, small = w < 140, step = small ? 3 : 1, k = Math.max(1, R / 92); // particles grow with the orb
     const turb = 0.06 + energy * 0.15, rot = t * 0.35, cr = Math.cos(rot), sr = Math.sin(rot), tilt = 0.4, ct = Math.cos(tilt), st = Math.sin(tilt);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
     ctx.globalCompositeOperation = light ? "source-over" : "lighter";
     const core = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, R * 0.9);
     core.addColorStop(0, color); core.addColorStop(1, "transparent");
@@ -1241,7 +1409,7 @@ function startOrb(canvas) {
       const p = pts[i];
       // Layered waves make an uneven, slowly morphing surface rather than a perfect ball.
       const wave = Math.sin(p.x * 3.1 + t * 1.3 + p.phase) * Math.cos(p.y * 2.7 - t * 0.9) + 0.6 * Math.sin(p.z * 4.3 + t * 1.7) + 0.35 * Math.sin((p.x + p.y) * 6 - t * 2.3 + p.phase);
-      const rr = p.r * (1 + turb * wave + voice.pulse * 0.08 * Math.sin(p.phase + t * 8));
+      const rr = p.r * (1 + turb * wave + e.pulse * 0.08 * Math.sin(p.phase + t * 8));
       const a = rot * p.spin * 0.25 + p.phase * 0.02; // inner particles swirl at their own pace
       const ca = Math.cos(a), sa = Math.sin(a);
       let x = (p.x * ca - p.z * sa) * rr, z = (p.x * sa + p.z * ca) * rr, y = p.y * rr;
@@ -1270,12 +1438,191 @@ function startOrb(canvas) {
       const sz = p.size * (0.6 + depth * 0.9) * (small ? 1.4 : 1) * (light ? 2.6 : 3.4) * k;
       ctx.drawImage(sprite, proj[q * 4] - sz / 2, proj[q * 4 + 1] - sz / 2, sz, sz);
     }
-    ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
-    if (!still || dash.busy || voice.listening || voice.speaking) requestAnimationFrame(frame);
-    else setTimeout(() => requestAnimationFrame(frame), 1000); // reduced motion: barely moves
   };
-  requestAnimationFrame(frame);
 }
+
+/** A ring stroke that shades from one colour to the other around the circle. */
+function ringStroke(ctx, cx, cy, start, A, B, alpha) {
+  if (!ctx.createConicGradient) return rgba(mixRgb(A, B, 0.5), alpha);
+  const g = ctx.createConicGradient(start, cx, cy);
+  g.addColorStop(0, rgba(A, alpha)); g.addColorStop(0.5, rgba(B, alpha)); g.addColorStop(1, rgba(A, alpha));
+  return g;
+}
+
+// Halo: a liquid core inside a membrane of three rippling rings. Listening draws the rings in
+// towards your voice; thinking sends a bright arc round the rim; speaking sends ripples out.
+function orbHalo() {
+  let sweep = 0, ripple = 0, inward = 0;
+  return (ctx, e) => {
+    const { w, h, t, dt, energy, R, k, light, small } = e, cx = w / 2, cy = h / 2;
+    const A = orbRgb(e.a), B = orbRgb(e.b), C = mixRgb(A, B, 0.5), TAU = Math.PI * 2;
+    ctx.globalCompositeOperation = light ? "source-over" : "lighter";
+    // Smoothed, so a spiky microphone level doesn't make it twitch.
+    inward += ((e.listening ? 0.04 + e.level * 0.16 : 0) - inward) * Math.min(1, dt * 10);
+    let g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 1.25);
+    g.addColorStop(0, rgba(C, (light ? 0.1 : 0.16) + energy * 0.1)); g.addColorStop(1, rgba(C, 0));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    // The core: an uneven blob whose edge drifts, lit from the upper left.
+    const cr = R * 0.5 * (1 + 0.03 * Math.sin(t * 1.4)) * (1 - inward * 0.5) * (1 + (e.speaking ? e.pulse * 0.1 : 0));
+    ctx.beginPath();
+    for (let i = 0; i <= 64; i++) {
+      const th = (i / 64) * TAU;
+      const r = cr * (1 + 0.05 * Math.sin(3 * th + t * 1.1) + 0.035 * Math.sin(5 * th - t * 1.6) + (e.listening ? e.level * 0.06 * Math.sin(7 * th + t * 5) : 0));
+      ctx[i ? "lineTo" : "moveTo"](cx + Math.cos(th) * r, cy + Math.sin(th) * r);
+    }
+    ctx.closePath();
+    g = ctx.createRadialGradient(cx - cr * 0.35, cy - cr * 0.4, cr * 0.05, cx, cy, cr * 1.05);
+    g.addColorStop(0, rgba(mixRgb(A, WHITE, 0.6), 0.9));
+    g.addColorStop(0.4, rgba(A, light ? 0.7 : 0.6));
+    g.addColorStop(0.85, rgba(B, light ? 0.55 : 0.45));
+    g.addColorStop(1, rgba(B, light ? 0.35 : 0.25));
+    ctx.fillStyle = g; ctx.fill();
+    // A soft specular highlight, which is most of what makes it read as glass.
+    const hx = cx - cr * 0.3, hy = cy - cr * 0.36, hr = cr * 0.34;
+    g = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr);
+    g.addColorStop(0, rgba(WHITE, light ? 0.55 : 0.4)); g.addColorStop(1, rgba(WHITE, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, hr, 0, Math.PI * 2); ctx.fill();
+    const rings = small ? 1 : 3, amp = 0.012 + energy * 0.018 + (e.listening ? e.level * 0.05 : 0);
+    let outer = 0;
+    for (let r = 0; r < rings; r++) {
+      const base = R * (0.74 + r * 0.11) * (1 - inward);
+      outer = base;
+      ctx.beginPath();
+      for (let i = 0; i <= 96; i++) {
+        const th = (i / 96) * TAU;
+        const rr = base * (1 + amp * (Math.sin(4 * th + t * (1.1 + r * 0.35) + r) + 0.6 * Math.sin(7 * th - t * 1.7 + r * 2)));
+        ctx[i ? "lineTo" : "moveTo"](cx + Math.cos(th) * rr, cy + Math.sin(th) * rr);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = ringStroke(ctx, cx, cy, t * 0.25 + r, A, B, (0.72 - r * 0.2) * (0.65 + energy * 0.4));
+      ctx.lineWidth = (1.7 - r * 0.4) * k; ctx.stroke();
+    }
+    if (e.thinking || e.answering) {
+      sweep += dt * (e.thinking ? 3.4 : 2);
+      ctx.lineCap = "round"; ctx.lineWidth = 2.6 * k;
+      for (let s = 0; s < 18; s++) {
+        const a0 = sweep - 1.3 + (s * 1.3) / 18;
+        ctx.beginPath(); ctx.arc(cx, cy, outer, a0, a0 + 1.3 / 18 + 0.01);
+        ctx.strokeStyle = rgba(B, (s / 18) ** 2 * 0.95); ctx.stroke();
+      }
+    }
+    ripple += dt * (0.5 + e.pulse * 1.4);
+    if (e.speaking) for (let j = 0; j < 3; j++) {
+      const f = (ripple + j / 3) % 1;
+      ctx.beginPath(); ctx.arc(cx, cy, R * (0.78 + f * 0.42), 0, TAU);
+      ctx.strokeStyle = rgba(A, (1 - f) ** 2 * (0.2 + e.pulse * 0.6)); ctx.lineWidth = 1.3 * k; ctx.stroke();
+    }
+  };
+}
+
+// Pulse: a ring of bars around a glowing core. Listening, the bars point inward and follow the
+// microphone; speaking, they point outward and follow each word; thinking, a lit band chases
+// round. Each bar eases towards its target, so the ring moves smoothly rather than flickering.
+function orbPulse() {
+  const N = 72, amp = new Float32Array(N);
+  let chase = 0;
+  return (ctx, e) => {
+    const { w, h, t, dt, energy, R, k, light, small } = e, cx = w / 2, cy = h / 2;
+    const A = orbRgb(e.a), B = orbRgb(e.b), n = small ? 36 : N, stride = N / n, TAU = Math.PI * 2;
+    ctx.globalCompositeOperation = light ? "source-over" : "lighter";
+    const cr = R * 0.3 * (1 + 0.03 * Math.sin(t * 1.5) + (e.speaking ? e.pulse * 0.14 : 0) - (e.listening ? e.level * 0.1 : 0));
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, cr * 2.2);
+    g.addColorStop(0, rgba(mixRgb(A, WHITE, 0.4), light ? 0.7 : 0.55)); g.addColorStop(0.35, rgba(A, light ? 0.35 : 0.28)); g.addColorStop(1, rgba(B, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, cr * 2.2, 0, TAU); ctx.fill();
+    chase = (chase + dt * (e.thinking ? 0.9 : 0.5)) % 1;
+    const r0 = R * 0.56, dir = e.listening ? -1 : 1;
+    ctx.lineCap = "round"; ctx.lineWidth = (small ? 2.4 : 2.2) * k;
+    for (let q = 0; q < n; q++) {
+      const i = q * stride, th = (q / n) * TAU - Math.PI / 2;
+      const wave = 0.5 + 0.5 * Math.sin(th * 3 + t * 2.1) * Math.sin(th * 2 - t * 1.3);
+      const spec = 0.5 + 0.5 * Math.sin(i * 12.99 + t * 9.1) * Math.sin(i * 78.23 - t * 6.7); // a rough per-bar spectrum
+      let target;
+      if (e.listening) target = 0.04 + e.level * (0.12 + 0.26 * spec);
+      else if (e.speaking) target = 0.05 + e.pulse * (0.22 + 0.3 * wave);
+      else if (e.thinking || e.answering) {
+        let d = Math.abs(q / n - chase); d = Math.min(d, 1 - d) * n;
+        target = 0.04 + (e.thinking ? 0.3 : 0.18) * Math.max(0, 1 - d / 9);
+      } else target = 0.03 + 0.03 * wave + energy * 0.03;
+      amp[i] += (target - amp[i]) * Math.min(1, dt * 14);
+      const L = Math.max(0.012, amp[i]) * R, c = Math.cos(th), sn = Math.sin(th);
+      ctx.strokeStyle = rgba(mixRgb(A, B, 0.5 + 0.5 * Math.sin(th + t * 0.4)), Math.min(0.95, 0.35 + amp[i] * 2.4));
+      ctx.beginPath(); ctx.moveTo(cx + c * r0, cy + sn * r0); ctx.lineTo(cx + c * (r0 + dir * L), cy + sn * (r0 + dir * L)); ctx.stroke();
+    }
+  };
+}
+
+// Globe: a turning wireframe globe inside a heading ring, mission-control style. Listening
+// squeezes it as you speak; thinking turns it faster while a meridian in the second colour scans
+// across; speaking sends a swell from the equator to the poles with each word.
+function orbGlobe() {
+  let spin = 0, scan = 0;
+  return (ctx, e) => {
+    const { w, h, t, dt, energy, R, k, light, small } = e, cx = w / 2, cy = h / 2;
+    const A = orbRgb(e.a), B = orbRgb(e.b), TAU = Math.PI * 2;
+    ctx.globalCompositeOperation = light ? "source-over" : "lighter";
+    spin += dt * (0.35 + energy * 0.5 + (e.thinking ? 0.9 : 0));
+    const cs = Math.cos(spin), ss = Math.sin(spin), ct = Math.cos(0.45), st = Math.sin(0.45);
+    const squash = 1 - (e.listening ? e.level * 0.14 : 0);
+    const swell = (lat) => 1 + (e.speaking ? 0.06 * e.pulse * Math.sin(Math.abs(lat) * 7 - t * 9) : 0);
+    const proj = (x, y, z) => {
+      const x2 = x * cs + z * ss, z2 = -x * ss + z * cs, y1 = y * squash;
+      // Drawn at 0.8 R: perspective puts the near edge at about 1.07 times that, which leaves
+      // clear air before the heading ring at 1.12 R.
+      const y2 = y1 * ct - z2 * st, z3 = y1 * st + z2 * ct, p = (2.8 / (2.8 + z3)) * 0.8;
+      return [cx + x2 * R * p, cy + y2 * R * p, z3];
+    };
+    // Front and back halves go into one path each: two strokes, however many lines.
+    const front = new Path2D(), back = new Path2D();
+    const trace = (point, steps, onlyFront) => {
+      let prev = point(0);
+      for (let j = 1; j <= steps; j++) {
+        const cur = point(j / steps);
+        const near = prev[2] + cur[2] < 0, path = near ? front : back;
+        if (near || !onlyFront) { path.moveTo(prev[0], prev[1]); path.lineTo(cur[0], cur[1]); }
+        prev = cur;
+      }
+    };
+    const lats = small ? 5 : 9, lons = small ? 8 : 14, seg = small ? 28 : 56;
+    for (let i = 1; i < lats; i++) {
+      const lat = -Math.PI / 2 + (i / lats) * Math.PI, y = Math.sin(lat), rr = Math.cos(lat) * swell(lat);
+      trace((f) => proj(Math.cos(f * TAU) * rr, y, Math.sin(f * TAU) * rr), seg);
+    }
+    for (let i = 0; i < lons; i++) {
+      const lon = (i / lons) * Math.PI;
+      trace((f) => { const a = f * TAU, s = swell(a); return proj(Math.cos(a) * Math.cos(lon) * s, Math.sin(a) * s, Math.cos(a) * Math.sin(lon) * s); }, seg);
+    }
+    ctx.lineWidth = 0.9 * k; ctx.strokeStyle = rgba(A, (light ? 0.18 : 0.14) + energy * 0.06); ctx.stroke(back);
+    ctx.lineWidth = 1.1 * k; ctx.strokeStyle = rgba(A, (light ? 0.6 : 0.5) + energy * 0.25); ctx.stroke(front);
+    if (e.thinking || e.answering) {
+      scan += dt * (e.thinking ? 1.8 : 1.1);
+      const lon = scan % Math.PI, beam = new Path2D();
+      let prev = null;
+      for (let j = 0; j <= seg; j++) {
+        const a = (j / seg) * TAU, cur = proj(Math.cos(a) * Math.cos(lon), Math.sin(a), Math.cos(a) * Math.sin(lon));
+        if (prev && prev[2] + cur[2] < 0) { beam.moveTo(prev[0], prev[1]); beam.lineTo(cur[0], cur[1]); }
+        prev = cur;
+      }
+      ctx.lineWidth = 2 * k; ctx.strokeStyle = rgba(B, 0.9); ctx.stroke(beam);
+    }
+    if (!small) {
+      // Heading ring: a tick every 6 degrees, a longer one every 30, turning slowly the other way.
+      const rr = R * 1.12, off = -t * 0.12, lit = e.speaking ? e.pulse : e.listening ? e.level : 0;
+      const minor = new Path2D(), major = new Path2D();
+      for (let i = 0; i < 60; i++) {
+        const a = off + (i / 60) * TAU, big = i % 5 === 0, r1 = rr - (big ? 7 : 3.5) * k * (1 + lit * 0.8);
+        const p = big ? major : minor;
+        p.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); p.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+      }
+      ctx.lineWidth = 1 * k; ctx.strokeStyle = rgba(A, 0.26 + lit * 0.4); ctx.stroke(minor);
+      ctx.lineWidth = 1.4 * k; ctx.strokeStyle = rgba(B, 0.5 + lit * 0.4); ctx.stroke(major);
+    }
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+    g.addColorStop(0, rgba(A, (light ? 0.05 : 0.08) + energy * 0.08)); g.addColorStop(1, rgba(A, 0));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  };
+}
+
+const ORB_PAINTERS = { nebula: orbNebula, halo: orbHalo, pulse: orbPulse, globe: orbGlobe };
 
 function startClock() {
   const tick = () => {
@@ -1927,13 +2274,97 @@ async function doSync(btn) {
 }
 $("#sync-btn").onclick = () => doSync($("#sync-btn"));
 
-$("#theme-btn").onclick = () => {
+// ---------------------------------------------------------------- appearance
+// Swatches are drawn from fixed colours, not the live tokens, so each one previews its own theme.
+const THEMES = [
+  { id: "auto", name: "Auto", hint: "Paper or Espresso, following your device", sw: ["linear-gradient(135deg, #f3ebdf 50%, #1e1813 50%)", "linear-gradient(135deg, #fbf6ee 50%, #28201a 50%)", "#8f5a3a", "#d9a26f"] },
+  { id: "light", name: "Paper", sw: ["#f3ebdf", "#fbf6ee", "#8f5a3a", "#b07a3c"] },
+  { id: "dark", name: "Espresso", sw: ["#1e1813", "#28201a", "#d9a26f", "#e2b562"] },
+  { id: "glass", name: "Glass", sw: ["radial-gradient(circle at 10% 0%, #12385a, transparent 70%), radial-gradient(circle at 95% 15%, #2e1f5c, transparent 70%), #060a13", "rgba(14, 22, 38, .62)", "#7dd3fc", "#a78bfa"] },
+  { id: "void", name: "Void", sw: ["radial-gradient(circle at 50% -25%, #2a1255, transparent 72%), #000", "rgba(11, 10, 20, .75)", "#a78bfa", "#f472b6"] },
+  { id: "terminal", name: "Terminal", sw: ["linear-gradient(rgba(74, 222, 128, .14) 1px, transparent 1px) 0 0 / 7px 7px, #030604", "rgba(8, 17, 11, .9)", "#4ade80", "#fbbf24"] },
+];
+const ORBS = [
+  { id: "auto", name: "Auto", hint: "The theme's own orb" },
+  { id: "nebula", name: "Nebula", hint: "A drifting cloud of particles" },
+  { id: "halo", name: "Halo", hint: "A liquid core in rippling rings" },
+  { id: "pulse", name: "Pulse", hint: "A ring of bars that follows your voice" },
+  { id: "globe", name: "Globe", hint: "A wireframe globe with a heading ring" },
+];
+const themeMeta = [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => [m, m.content]);
+const currentTheme = () => document.documentElement.dataset.theme || "auto";
+const currentOrb = () => { const o = prefs.get("orb", "auto"); return ORBS.some((x) => x.id === o) ? o : "auto"; };
+
+/** The phone's status bar follows the chosen theme; on Auto it follows the device again. */
+function syncThemeColor() {
+  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  for (const [m, original] of themeMeta) m.content = document.documentElement.dataset.theme ? bg : original;
+}
+
+function applyTheme(id) {
   const root = document.documentElement;
-  const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  root.dataset.theme = dark ? "light" : "dark";
-  try { localStorage.setItem("brain-theme", root.dataset.theme); } catch {}
-};
-try { const t = localStorage.getItem("brain-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+  if (id === "auto" || !THEMES.some((t) => t.id === id)) { delete root.dataset.theme; try { localStorage.removeItem("brain-theme"); } catch {} }
+  else { root.dataset.theme = id; try { localStorage.setItem("brain-theme", id); } catch {} }
+  syncThemeColor();
+  markChecked();
+}
+function applyOrb(id) { prefs.set("orb", id); markChecked(); } // the orb reads it on its next frame
+
+function markChecked() {
+  const pick = { "data-theme-pick": currentTheme(), "data-orb-pick": currentOrb() };
+  for (const b of document.querySelectorAll("#appearance [role=radio]")) {
+    const attr = b.hasAttribute("data-theme-pick") ? "data-theme-pick" : "data-orb-pick";
+    const on = b.getAttribute(attr) === pick[attr];
+    b.setAttribute("aria-checked", on); b.tabIndex = on ? 0 : -1; // roving tabindex: Tab enters a group at its choice
+  }
+}
+
+function openAppearance(from) {
+  const pop = $("#appearance");
+  $("#ap-themes").innerHTML = THEMES.map((t) =>
+    `<button type="button" class="ap-opt" role="radio" data-theme-pick="${t.id}" title="${esc(t.hint ?? t.name)}">` +
+    `<span class="ap-sw" style="--sw-bg:${t.sw[0]};--sw-panel:${t.sw[1]};--sw-a:${t.sw[2]};--sw-b:${t.sw[3]}"></span>${esc(t.name)}</button>`).join("");
+  $("#ap-orbs").innerHTML = ORBS.map((o) => `<button type="button" class="ap-opt" role="radio" data-orb-pick="${o.id}" title="${esc(o.hint)}">${esc(o.name)}</button>`).join("");
+  pop.hidden = false;
+  markChecked();
+  // A live preview of whichever orb is chosen. It's removed on close, which ends its animation.
+  const c = document.createElement("canvas");
+  $("#ap-preview").replaceChildren(c);
+  startOrb(c);
+  pop.returnTo = from;
+  pop.querySelector('[data-theme-pick][aria-checked="true"]')?.focus();
+  setTimeout(() => document.addEventListener("pointerdown", closeOnOutside, true));
+}
+function closeAppearance() {
+  const pop = $("#appearance");
+  if (pop.hidden) return;
+  pop.hidden = true;
+  $("#ap-preview").replaceChildren();
+  document.removeEventListener("pointerdown", closeOnOutside, true);
+  pop.returnTo?.focus();
+}
+const closeOnOutside = (e) => { if (!e.target.closest("#appearance, #theme-btn, #theme-btn-m")) closeAppearance(); };
+for (const id of ["#theme-btn", "#theme-btn-m"]) {
+  const btn = $(id);
+  if (btn) btn.onclick = () => ($("#appearance").hidden ? openAppearance(btn) : closeAppearance());
+}
+$("#appearance").addEventListener("click", (e) => {
+  const b = e.target.closest("[role=radio]");
+  if (!b) return;
+  if (b.dataset.themePick) applyTheme(b.dataset.themePick); else applyOrb(b.dataset.orbPick);
+});
+$("#appearance").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.stopPropagation(); return closeAppearance(); }
+  // Arrow keys move the choice within a group, as in any radio group.
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+  const b = e.target.closest("[role=radio]");
+  if (!step || !b) return;
+  e.preventDefault();
+  const group = [...b.parentElement.querySelectorAll("[role=radio]")];
+  const next = group[(group.indexOf(b) + step + group.length) % group.length];
+  next.focus(); next.click();
+});
+syncThemeColor();
 
 document.addEventListener("keydown", (e) => {
   if (e.target.closest && e.target.closest(".cm-editor")) return;

@@ -134,7 +134,7 @@ function source(createNote: CreateNote) {
 
 const menuTheme = EditorView.theme({
   ".cm-tooltip.cm-tooltip-autocomplete": {
-    background: "var(--panel)",
+    background: "var(--overlay, var(--panel))", // floats over text: opaque even in glass themes
     border: "1px solid var(--border)",
     borderRadius: "12px",
     boxShadow: "var(--shadow-lift)",
