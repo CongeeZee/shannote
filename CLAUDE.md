@@ -37,7 +37,7 @@ src/
   inbox.ts    inbox entry parsing · links.ts unlinked mentions · curate.ts triage/link prompts
   mcp/        MCP server (tools, resource, instructions)
   share/      shared spaces (shared/<slug>/ = own git repo) and guest links
-  agent/      dashboard chat: runs Claude Code headless (`claude -p`) with only our MCP tools
+  agent/      Claude Code runs (chat, briefs), usage, voices (Kokoro), schedules, always-on server
   web/        local web app: HTTP API, markdown rendering, ui.html (vanilla JS)
   web/editor/ CodeMirror editor (browser code, bundled by esbuild to dist/editor.js)
   app.ts      desktop launcher (.desktop / macOS .app) and app-mode window

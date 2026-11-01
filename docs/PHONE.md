@@ -2,7 +2,14 @@
 
 There are three ways, from least to most setup. Pick one; they can be combined.
 
-## 1. The web app over Tailscale or home Wi-Fi (recommended)
+## 0. An always-on server (recommended if you have a spare laptop)
+
+`shannote server install` runs Shannote around the clock and publishes it on your Tailscale
+network over HTTPS, so your phone works even when your main computer is off, and the
+microphone works (phone browsers only allow it on HTTPS). Step by step for a spare MacBook:
+[SERVER.md](SERVER.md).
+
+## 1. The web app over Tailscale or home Wi-Fi
 
 Good for: quick capture, ticking tasks, today's schedule, inbox triage, search, reading notes.
 

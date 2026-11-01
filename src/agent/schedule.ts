@@ -1,19 +1,29 @@
 /**
- * Scheduled briefs as systemd user timers (Linux). Unlike cron, a timer with
- * `Persistent=true` runs a missed brief when the laptop wakes up or boots, and
- * `brief --if-missing` makes that catch-up run a no-op if the brief already exists.
+ * Scheduled briefs: systemd user timers on Linux, launchd LaunchAgents on macOS. Unlike
+ * cron, both run a brief that was missed while the laptop slept once it wakes up (systemd
+ * also after a reboot, thanks to `Persistent=true`), and `brief --if-missing` makes that
+ * catch-up run a no-op if the brief already exists.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { launchAgentsDir, launchdInstall, launchdRemove, plist, servicePath, unitDir } from "./service.js";
+
+export { unitDir };
 
 export type BriefKind = "morning" | "evening";
 
 export interface ScheduleUnit { kind: BriefKind; time: string }
 
-export const unitDir = () => join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "systemd", "user");
 const unitName = (kind: BriefKind) => `shannote-brief-${kind}`;
+const agentLabel = (kind: BriefKind) => `com.shannote.brief-${kind}`;
+
+/** The LaunchAgent for one brief on macOS. */
+export function briefPlist(o: ScheduleUnit & { node: string; cli: string; vault: string; log: string }): string {
+  const [hour, minute] = o.time.split(":").map(Number) as [number, number];
+  return plist({ label: agentLabel(o.kind), args: [o.node, o.cli, "--vault", o.vault, "brief", o.kind, "--if-missing"], log: o.log, path: servicePath(o.node), at: { hour, minute } });
+}
 
 /** "7:30" / "07:30" → "07:30"; throws on anything else. */
 export function parseTime(t: string): string {
@@ -53,7 +63,12 @@ WantedBy=timers.target
 const systemctl = (...args: string[]) => execFileSync("systemctl", ["--user", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
 export function installSchedule(list: ScheduleUnit[], o: { node: string; cli: string; vault: string; log: string }): string[] {
-  if (process.platform !== "linux") throw new Error("Automatic scheduling is only set up for Linux (systemd) so far. `shannote schedule` shows a cron line you can use instead.");
+  if (process.platform === "darwin") {
+    mkdirSync(dirname(o.log), { recursive: true });
+    for (const u of list) launchdInstall(agentLabel(u.kind), briefPlist({ ...u, ...o }));
+    return list.map((u) => `${agentLabel(u.kind)}.plist`);
+  }
+  if (process.platform !== "linux") throw new Error("Automatic scheduling is set up for Linux (systemd) and macOS (launchd). `shannote schedule` shows a cron line you can use instead.");
   mkdirSync(unitDir(), { recursive: true });
   mkdirSync(dirname(o.log), { recursive: true });
   const written: string[] = [];
@@ -69,6 +84,7 @@ export function installSchedule(list: ScheduleUnit[], o: { node: string; cli: st
 }
 
 export function removeSchedule(kinds: BriefKind[] = ["morning", "evening"]): string[] {
+  if (process.platform === "darwin") return kinds.filter((k) => launchdRemove(agentLabel(k))).map((k) => `${agentLabel(k)}.plist`);
   const removed: string[] = [];
   for (const kind of kinds) {
     const timer = join(unitDir(), `${unitName(kind)}.timer`);
@@ -85,6 +101,15 @@ export function removeSchedule(kinds: BriefKind[] = ["morning", "evening"]): str
 /** Installed briefs and when they next run, from systemd. */
 export function scheduleStatus(): { kind: BriefKind; next: string | null; last: string | null }[] {
   const found: { kind: BriefKind; next: string | null; last: string | null }[] = [];
+  if (process.platform === "darwin") {
+    for (const kind of ["morning", "evening"] as BriefKind[]) {
+      const file = join(launchAgentsDir(), `${agentLabel(kind)}.plist`);
+      if (!existsSync(file)) continue;
+      const m = readFileSync(file, "utf8").match(/<key>Hour<\/key><integer>(\d+)<\/integer><key>Minute<\/key><integer>(\d+)<\/integer>/);
+      found.push({ kind, next: m ? `daily at ${m[1]!.padStart(2, "0")}:${m[2]!.padStart(2, "0")}` : "daily", last: null });
+    }
+    return found;
+  }
   for (const kind of ["morning", "evening"] as BriefKind[]) {
     if (!existsSync(join(unitDir(), `${unitName(kind)}.timer`))) continue;
     let next: string | null = null, last: string | null = null;

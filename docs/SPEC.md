@@ -722,3 +722,22 @@ claude mcp add brain --scope user -- npx -y shannote serve
   themes draw crisp ones normally. Reduced motion slows it to an occasional redraw.
 - **Not done yet** (from looking at other "AI OS" dashboards): a focus timer, past-chat
   history, an activity heatmap.
+
+## 20. Implementation notes (Phase 6: always-on server)
+
+- **`brain server install | status | remove`** (`src/agent/service.ts`): runs `web --remote`
+  as a LaunchAgent on macOS (`com.shannote.server`, RunAtLoad + KeepAlive, wrapped in
+  `caffeinate -i` so the Mac doesn't idle-sleep) or a systemd user service on Linux
+  (`Restart=always`), then runs `tailscale serve --bg <port>` and prints
+  `https://<machine>.ts.net/?token=…`. Guide for a spare MacBook: `docs/SERVER.md`.
+- **`web --remote`**: needs the web token like `--lan`, but listens on 127.0.0.1 only, so the
+  sole way in from other devices is through `tailscale serve` (HTTPS, which phone browsers
+  need before they allow the microphone). Requests carrying `Tailscale-User-Login` or
+  `X-Forwarded-For` are never treated as local, whatever their Host header, so relayed
+  traffic always needs the token. Tailscale's docs don't say whether `serve` keeps the
+  Host header, and this doesn't depend on it.
+- **Briefs on macOS**: `brain schedule install` writes a LaunchAgent with
+  `StartCalendarInterval` (launchd runs a missed time once the Mac wakes; `--if-missing`
+  keeps that from doubling up). Run briefs on one machine only.
+- Several machines on one vault is the existing git design (§5): the server is just another
+  device that's always on.

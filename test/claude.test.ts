@@ -258,3 +258,35 @@ describe("Claude's voice (Kokoro)", () => {
     expect(typeof r.available).toBe("boolean");
   });
 });
+
+describe("always-on server", () => {
+  const o = { node: "/opt/homebrew/bin/node", cli: "/Users/x/My Code/shannote/dist/cli.js", vault: "/Users/x/vault & notes", log: "/Users/x/.cache/shannote/server.log", port: 4567 };
+
+  it("keeps a LaunchAgent running on macOS, listening only for tailscale serve", async () => {
+    const { serverPlist } = await import("../src/agent/service.js");
+    const p = serverPlist(o);
+    expect(p).toContain("<key>Label</key><string>com.shannote.server</string>");
+    expect(p).toContain("<key>KeepAlive</key><true/>");
+    expect(p).toContain("<key>RunAtLoad</key><true/>");
+    const args = [...p.matchAll(/^ {4}<string>(.*)<\/string>$/gm)].map((m) => m[1]);
+    expect(args).toEqual(["/usr/bin/caffeinate", "-i", "/opt/homebrew/bin/node", "/Users/x/My Code/shannote/dist/cli.js", "--vault", "/Users/x/vault &amp; notes", "web", "--remote", "--port", "4567"]);
+    expect(p).toContain("/opt/homebrew/bin:"); // finds claude and git without a login shell
+  });
+
+  it("is a restarting systemd user service on Linux", async () => {
+    const { serverUnit } = await import("../src/agent/service.js");
+    const u = serverUnit(o);
+    expect(u).toContain('ExecStart=/opt/homebrew/bin/node "/Users/x/My Code/shannote/dist/cli.js" --vault "/Users/x/vault & notes" web --remote --port 4567');
+    expect(u).toContain("Restart=always");
+    expect(u).toContain("WantedBy=default.target");
+  });
+
+  it("schedules the morning brief with launchd on macOS", async () => {
+    const { briefPlist } = await import("../src/agent/schedule.js");
+    const p = briefPlist({ kind: "morning", time: "07:30", node: o.node, cli: o.cli, vault: "/Users/x/vault", log: "/tmp/b.log" });
+    expect(p).toContain("<key>StartCalendarInterval</key>");
+    expect(p).toContain("<key>Hour</key><integer>7</integer><key>Minute</key><integer>30</integer>");
+    expect(p).toContain("<string>--if-missing</string>");
+    expect(p).not.toContain("KeepAlive");
+  });
+});

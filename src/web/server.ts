@@ -121,7 +121,10 @@ export function startWebServer(brain: Brain, port: number, host = "127.0.0.1", o
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
       const q = url.searchParams;
-      const local = isLoopback(req) && allowedHosts.has(req.headers.host ?? "");
+      // Traffic relayed by `tailscale serve` (or any proxy) arrives on loopback too, so a proxy's
+      // headers mark it as another device: it needs the token, whatever Host header it carries.
+      const proxied = !!(req.headers["tailscale-user-login"] || req.headers["x-forwarded-for"]);
+      const local = isLoopback(req) && allowedHosts.has(req.headers.host ?? "") && !proxied;
       let guest: Guest | undefined;
       if (!local) {
         // Guest links work through --lan or a tunnel (Tailscale Funnel); they only see one shared space.

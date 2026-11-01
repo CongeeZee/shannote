@@ -23,6 +23,10 @@ Usage:
   brain doctor                          Broken links, bad frontmatter, duplicate names
   brain web [--port 4567] [--open]      Local web app at http://localhost:4567
             [--lan] [--new-token]       …also reachable from your phone with a secret link
+            [--remote]                  …only through a proxy like \`tailscale serve\` (token required)
+  brain server install [--port 4567]    Run Shannote all the time on this computer (launchd on macOS,
+                                        systemd on Linux) and publish it on Tailscale over HTTPS
+  brain server status | remove          Is the always-on server running? / take it down
   brain app [--port 4567]               Open the web app in its own window (starts it if needed)
   brain app install | uninstall | stop  Add/remove Shannote in your applications menu
   brain serve [--client NAME]           MCP server over stdio (for Claude Desktop / Code)
@@ -66,6 +70,7 @@ const { values, positionals } = parseArgs({
     port: { type: "string" },
     open: { type: "boolean", default: false },
     lan: { type: "boolean", default: false },
+    remote: { type: "boolean", default: false },
     "new-token": { type: "boolean", default: false },
     path: { type: "string" },
     client: { type: "string" },
@@ -94,6 +99,18 @@ async function withIndex<T>(fn: (db: ReturnType<typeof openDb>, vault: string) =
   } finally {
     db.close();
   }
+}
+
+/** The secret that lets other devices (phone) in; made once and kept in the machine config. */
+async function webToken(renew = false): Promise<string> {
+  const { loadConfig, saveConfig: save } = await import("./config.js");
+  const { randomBytes } = await import("node:crypto");
+  let token = (loadConfig() as { webToken?: string }).webToken;
+  if (!token || renew) {
+    token = randomBytes(18).toString("base64url");
+    save({ webToken: token } as never);
+  }
+  return token;
 }
 
 async function main(): Promise<number> {
@@ -451,16 +468,9 @@ ${process.platform === "linux" ? "Or, with" : "With"} cron (\`crontab -e\`; miss
         embedder: embedderFromEnv(),
       });
       await brain.fresh();
-      let lanToken: string | undefined;
-      if (values.lan) {
-        const { loadConfig, saveConfig: save } = await import("./config.js");
-        const { randomBytes } = await import("node:crypto");
-        lanToken = (loadConfig() as { webToken?: string }).webToken;
-        if (!lanToken || values["new-token"]) {
-          lanToken = randomBytes(18).toString("base64url");
-          save({ webToken: lanToken } as never);
-        }
-      }
+      // --lan listens on the network; --remote stays on 127.0.0.1 for `tailscale serve` to relay.
+      // Either way, other devices need the token.
+      const lanToken = values.lan || values.remote ? await webToken(values["new-token"]) : undefined;
       const server = startWebServer(brain, port, values.lan ? "0.0.0.0" : "127.0.0.1", { lanToken });
       server.on("error", (e: NodeJS.ErrnoException) => {
         console.error(e.code === "EADDRINUSE" ? `Port ${port} is in use. Try --port ${port + 1}.` : e.message);
@@ -469,7 +479,9 @@ ${process.platform === "linux" ? "Or, with" : "With"} cron (\`crontab -e\`; miss
       server.on("listening", () => {
         const url = `http://localhost:${port}`;
         console.log(`Shannote is running at ${url}  (vault ${brain.vault})`);
-        if (lanToken) {
+        if (lanToken && values.remote) {
+          console.log("Other devices reach it through `tailscale serve` (see `shannote server install`).\nPress Ctrl+C to stop.");
+        } else if (lanToken) {
           import("node:os").then(({ networkInterfaces }) => {
             const ips = Object.values(networkInterfaces())
               .flat()
@@ -494,6 +506,44 @@ ${process.platform === "linux" ? "Or, with" : "With"} cron (\`crontab -e\`; miss
       process.on("SIGINT", stop);
       process.on("SIGTERM", stop);
       return new Promise<number>(() => {});
+    }
+
+    case "server": {
+      const svc = await import("./agent/service.js");
+      const { cacheRoot } = await import("./config.js");
+      const { join } = await import("node:path");
+      const port = Number(values.port ?? 4567);
+      const sub = args[0] ?? "status";
+      if (sub === "install") {
+        const vault = resolveVault(values.vault);
+        const log = join(cacheRoot(), "server.log");
+        const token = await webToken(values["new-token"]);
+        const where = svc.installServer({ node: process.execPath, cli: process.argv[1]!, vault, log, port });
+        console.log(`Shannote now runs all the time on this computer: ${where}\nVault: ${vault} · log: ${log}`);
+        const ts = svc.tailscaleName();
+        if (!ts.name) {
+          console.log(`\nNot on Tailscale yet: ${ts.problem}\nOnce it is, run \`shannote server install\` again to get your phone link.`);
+          return 0;
+        }
+        const served = svc.tailscaleServe(port);
+        if (!served.ok) {
+          console.log(`\nCouldn't publish it with \`tailscale serve\`: ${served.message}`);
+          console.log(`Run this yourself (on Linux, first allow it once with \`sudo tailscale set --operator=$USER\`):\n  tailscale serve --bg ${port}`);
+        }
+        console.log(`\nOn your phone (signed in to the same Tailscale account), open once:\n  https://${ts.name}/?token=${token}`);
+        console.log("Then choose \"Add to Home Screen\" in Chrome's menu. The link is a password; `shannote server install --new-token` replaces it.");
+        return 0;
+      }
+      if (sub === "remove") {
+        const removed = svc.removeServer();
+        console.log(removed ? "Stopped and removed the always-on server. (`tailscale serve reset` stops publishing it.)" : "The always-on server wasn't installed.");
+        return 0;
+      }
+      const st = svc.serverStatus();
+      const ts = svc.tailscaleName();
+      console.log(`Always-on server: ${st.installed ? (st.running ? "running" : "installed but not running") : "not installed (`shannote server install`)"}`);
+      console.log(`Tailscale: ${ts.name ? `https://${ts.name}` : ts.problem}`);
+      return 0;
     }
 
     case "share": {

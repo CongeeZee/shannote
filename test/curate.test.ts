@@ -164,4 +164,13 @@ describe("web app LAN mode", () => {
     expect((await get("/manifest.webmanifest", { host: `localhost:${port}` })).body).toContain("Shannote");
     void readdirSync;
   });
+
+  it("treats traffic relayed by tailscale serve as another device, even with a localhost Host", async () => {
+    // tailscale serve connects from loopback; its identity header (or X-Forwarded-For) gives it away.
+    const proxies: Record<string, string>[] = [{ "tailscale-user-login": "me@example.com" }, { "x-forwarded-for": "100.64.0.7" }];
+    for (const proxy of proxies) {
+      expect((await get("/api/status", { host: `localhost:${port}`, ...proxy })).status).toBe(401);
+      expect((await get("/api/status", { host: `localhost:${port}`, cookie: "brain_token=secret-token-123", ...proxy })).status).toBe(200);
+    }
+  });
 });
